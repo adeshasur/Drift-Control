@@ -16,7 +16,8 @@ export function initDB() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       folder_path TEXT,
-      github_url TEXT
+      github_url TEXT,
+      deadline_date TEXT
     );
     
     CREATE TABLE IF NOT EXISTS tasks (
@@ -38,6 +39,13 @@ export function initDB() {
     );
   `);
   
+  // Migrate: add deadline_date if not exists
+  try {
+    db.prepare("SELECT deadline_date FROM workspaces LIMIT 1").get();
+  } catch (e) {
+    db.prepare("ALTER TABLE workspaces ADD COLUMN deadline_date TEXT").run();
+  }
+
   return db;
 }
 

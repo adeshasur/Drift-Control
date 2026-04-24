@@ -2,6 +2,28 @@ import React, { useEffect, useState } from 'react'
 import { useStore } from './store'
 import { Folder, Code, Plus, Search, CheckCircle, Clock, AlertCircle, Link as LinkIcon, Play, X } from 'lucide-react'
 
+function WindowControls() {
+  return (
+    <div className="absolute top-4 right-6 flex items-center gap-2 no-drag z-50">
+      <div 
+        onClick={() => window.api?.minimize()} 
+        className="w-3 h-3 rounded-full bg-zinc-600 hover:bg-yellow-500 cursor-pointer transition-all duration-200"
+        title="Minimize"
+      />
+      <div 
+        onClick={() => window.api?.maximize()} 
+        className="w-3 h-3 rounded-full bg-zinc-600 hover:bg-green-500 cursor-pointer transition-all duration-200"
+        title="Maximize"
+      />
+      <div 
+        onClick={() => window.api?.close()} 
+        className="w-3 h-3 rounded-full bg-zinc-600 hover:bg-red-500 cursor-pointer transition-all duration-200"
+        title="Close"
+      />
+    </div>
+  );
+}
+
 function DeepWorkOverlay({ taskTitle }) {
   const [time, setTime] = useState(25 * 60);
 
@@ -36,6 +58,35 @@ function App() {
     fetchWorkspaces, setActiveWorkspace, addWorkspace,
     addTask, updateTaskStatus
   } = useStore();
+
+  const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
+
+  const calculateTimeLeft = (deadline) => {
+    if (!deadline) return null;
+    const difference = +new Date(deadline) - +new Date();
+    if (difference <= 0) return "D-DAY";
+    
+    const days = Math.floor(difference / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((difference / (1000 * 60 * 60)) % 24);
+    return `${days}d ${hours}h`;
+  };
+
+  const [timeLeft, setTimeLeft] = useState(activeWorkspace ? calculateTimeLeft(activeWorkspace.deadline_date) : null);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (activeWorkspace?.deadline_date) {
+        setTimeLeft(calculateTimeLeft(activeWorkspace.deadline_date));
+      }
+    }, 60000); // Update every minute
+    return () => clearInterval(timer);
+  }, [activeWorkspace]);
+
+  useEffect(() => {
+    if (activeWorkspace) {
+      setTimeLeft(calculateTimeLeft(activeWorkspace.deadline_date));
+    }
+  }, [activeWorkspaceId, workspaces]);
 
   const [isAddingWorkspace, setIsAddingWorkspace] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
@@ -76,7 +127,7 @@ function App() {
     }
   };
 
-  const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
+
 
   const openPath = (path) => {
     if (path) window.api.openPath(path);
@@ -107,6 +158,7 @@ function App() {
 
   return (
     <div className="flex h-screen w-full font-sans draggable">
+      <WindowControls />
       {/* Sidebar - Workspaces */}
       <div className="w-64 glass-panel border-l-0 border-t-0 border-b-0 flex flex-col no-drag">
         <div className="p-4 pt-10">
@@ -283,8 +335,16 @@ function App() {
 
                 {/* Gamification / Contribution */}
                 <h3 className="text-sm font-semibold flex items-center gap-2 mb-4 uppercase tracking-wider text-zinc-400 mt-8">
-                  Activity
+                  Activity & Deadline
                 </h3>
+                
+                {timeLeft && (
+                  <div className="glass-panel p-4 rounded-lg flex flex-col items-center justify-center space-y-2 border-red-500/20 mb-3">
+                    <div className="text-2xl font-bold text-red-400 tracking-tighter">{timeLeft}</div>
+                    <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Until Exam</div>
+                  </div>
+                )}
+
                 <div className="glass-panel p-4 rounded-lg flex flex-col items-center justify-center space-y-2">
                   <div className="text-3xl font-bold text-green-400">{tasks.filter(t => t.status === 'Done').length}</div>
                   <div className="text-xs text-zinc-400 uppercase tracking-wider">Tasks Done</div>

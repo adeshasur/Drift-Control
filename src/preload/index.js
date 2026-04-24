@@ -15,6 +15,9 @@ const api = {
   openDeepWork: (taskTitle) => ipcRenderer.send('open-deep-work', taskTitle),
   onShortcutAddTask: (callback) => ipcRenderer.on('shortcut-add-task', callback),
   removeShortcutAddTask: (callback) => ipcRenderer.removeListener('shortcut-add-task', callback),
+  minimize: () => ipcRenderer.send('window-minimize'),
+  maximize: () => ipcRenderer.send('window-maximize'),
+  close: () => ipcRenderer.send('window-close'),
 }
 
 if (process.contextIsolated) {

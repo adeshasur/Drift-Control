@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, globalShortcut } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { initDB, setupIPC } from './database'
+import { initDB, setupIPC, getDB } from './database'
 
 function createWindow() {
   const mainWindow = new BrowserWindow({
@@ -10,6 +10,7 @@ function createWindow() {
     height: 800,
     show: false,
     autoHideMenuBar: true,
+    frame: false,
     titleBarStyle: 'hidden',
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
@@ -17,6 +18,17 @@ function createWindow() {
       sandbox: false
     }
   })
+
+  // Window Controls IPC
+  ipcMain.on('window-minimize', () => mainWindow.minimize());
+  ipcMain.on('window-maximize', () => {
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow.maximize();
+    }
+  });
+  ipcMain.on('window-close', () => mainWindow.close());
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
@@ -49,6 +61,19 @@ app.whenReady().then(() => {
 
   // Setup IPC handlers
   setupIPC(ipcMain, shell);
+
+  // Auto-seed initial workspaces if empty
+  const db = getDB();
+  const workspacesCount = db.prepare('SELECT count(*) as count FROM workspaces').get().count;
+  if (workspacesCount === 0) {
+    console.log('Seeding initial workspaces...');
+    const insert = db.prepare('INSERT INTO workspaces (name, deadline_date) VALUES (?, ?)');
+    insert.run('UCSC', '2026-07-11');
+    insert.run('NIBM', null);
+  } else {
+    // One-time update for UCSC deadline if needed
+    db.prepare("UPDATE workspaces SET deadline_date = '2026-07-11' WHERE name = 'UCSC' AND deadline_date IS NULL").run();
+  }
 
   // Deep Work Mode Window
   let deepWorkWindow = null;
