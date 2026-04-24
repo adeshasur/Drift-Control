@@ -50,6 +50,11 @@ export const useStore = create((set, get) => ({
     await window.api.deleteTask(id);
     await get().fetchTasks(null, get().selectedDate);
   },
+  toggleTimer: async (id, isRunning) => {
+    if (!window.api) return;
+    await window.api.toggleTimer({ id, isRunning });
+    await get().fetchTasks(null, get().selectedDate);
+  },
 
   // Links
   fetchLinks: async (workspaceId) => {

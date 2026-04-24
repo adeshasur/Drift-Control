@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { useStore } from './store'
-import { Folder, Code, Plus, Search, CheckCircle, Clock, AlertCircle, Link as LinkIcon, Play, X } from 'lucide-react'
+import { Folder, Code, Plus, Search, CheckCircle, Clock, AlertCircle, Link as LinkIcon, Play, Pause, X } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 function WindowControls() {
@@ -58,10 +58,18 @@ function DeepWorkOverlay({ taskTitle }) {
   );
 }
 
+const formatDuration = (totalSeconds) => {
+  if (!totalSeconds) return '00:00:00';
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+
 const getCategoryInfo = (text) => {
   const content = text.toLowerCase();
   
-  if (content.match(/ucsc|nibm|bit|exam|study|assignment|semester|degree|learn|reading|class/)) {
+  if (content.match(/ucsc|nibm|bit|exam|study|assignment|semester|degree|learn|reading|class|recording|lecture/)) {
     return { label: 'Education', icon: <Clock size={14} />, color: 'text-blue-400', bg: 'bg-blue-400/10', border: 'border-blue-400/20' };
   }
   if (content.match(/code|fix|bug|react|css|js|electron|repo|github|dev|implementation|build|git|push/)) {
@@ -80,15 +88,35 @@ const getCategoryInfo = (text) => {
 function App() {
   const { 
     tasks, selectedDate,
-    fetchWorkspaces, addTask, deleteTask, setSelectedDate
+    fetchWorkspaces, addTask, deleteTask, toggleTimer, setSelectedDate
   } = useStore();
 
   const [isAddingLog, setIsAddingLog] = useState(false);
   const [newLogContent, setNewLogContent] = useState('');
-
+  const [localDurations, setLocalDurations] = useState({});
+  
   useEffect(() => {
     fetchWorkspaces();
   }, []);
+
+  // Update local durations for running timers
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const updates = {};
+      tasks.forEach(task => {
+        if (task.is_running && task.last_started_at) {
+          const startTime = new Date(task.last_started_at).getTime();
+          const now = new Date().getTime();
+          const elapsed = Math.floor((now - startTime) / 1000);
+          updates[task.id] = (task.duration || 0) + elapsed;
+        }
+      });
+      if (Object.keys(updates).length > 0) {
+        setLocalDurations(prev => ({ ...prev, ...updates }));
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [tasks]);
 
   const handleAddLog = async (e) => {
     if (e.key === 'Enter' && newLogContent.trim()) {
@@ -112,113 +140,129 @@ function App() {
     return <DeepWorkOverlay taskTitle={taskTitle} />;
   }
 
+  const totalDailySeconds = tasks.reduce((acc, task) => {
+    const current = localDurations[task.id] || task.duration || 0;
+    return acc + current;
+  }, 0);
+
   return (
     <div className="flex h-screen w-full font-sans draggable overflow-hidden bg-zinc-950 text-white">
       <WindowControls />
       
-      {/* Main Content Area - Centered Layout */}
-      <div className="flex-1 flex flex-col no-drag overflow-hidden max-w-4xl mx-auto border-x border-white/5 bg-zinc-900/30 shadow-2xl">
+      {/* Main Content Area - Full Width Layout */}
+      <div className="flex-1 flex flex-col no-drag overflow-hidden w-full bg-zinc-900/30 shadow-2xl">
         {/* Header */}
-        <div className="h-48 border-b border-glass-border flex flex-col justify-end px-16 pb-10 bg-gradient-to-b from-transparent to-black/20">
+        <div className="h-56 border-b border-glass-border flex flex-col justify-end px-20 pb-12 bg-gradient-to-b from-transparent to-black/30">
           <div className="flex justify-between items-end">
             <div>
-              <h1 className="text-xs font-black tracking-[0.3em] text-zinc-600 uppercase mb-3">System.Drift</h1>
-              <h2 className="text-5xl font-black tracking-tighter">Daily Log</h2>
+              <h1 className="text-sm font-black tracking-[0.4em] text-zinc-600 uppercase mb-4">System.Drift</h1>
+              <h2 className="text-6xl font-black tracking-tighter">Daily Log</h2>
             </div>
             
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-3 bg-white/5 px-6 py-3 rounded-2xl border border-white/10 hover:border-white/20 transition-all cursor-pointer group shadow-inner">
-                <Clock size={18} className="text-blue-400 group-hover:scale-110 transition-transform" />
+            <div className="flex items-center gap-8">
+              <div className="flex items-center gap-4 bg-white/5 px-8 py-4 rounded-3xl border border-white/10 hover:border-white/20 transition-all cursor-pointer group shadow-inner">
+                <Clock size={22} className="text-blue-400 group-hover:scale-110 transition-transform" />
                 <input 
                   type="date" 
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
-                  className="bg-transparent border-none text-sm font-mono font-bold text-zinc-200 outline-none cursor-pointer"
+                  className="bg-transparent border-none text-lg font-mono font-bold text-zinc-200 outline-none cursor-pointer"
                 />
               </div>
               <button 
                 onClick={() => setIsAddingLog(true)} 
-                className="w-14 h-14 bg-white text-black rounded-2xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-white/10"
+                className="w-16 h-16 bg-white text-black rounded-3xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-white/20"
               >
-                <Plus size={28} strokeWidth={3} />
+                <Plus size={32} strokeWidth={4} />
               </button>
             </div>
           </div>
         </div>
 
         {/* Logs Area */}
-        <div className="flex-1 overflow-y-auto px-16 py-12 scrollbar-hide">
-          <div className="max-w-2xl mx-auto space-y-8">
+        <div className="flex-1 overflow-y-auto px-20 py-16 scrollbar-hide">
+          <div className="space-y-10">
             <AnimatePresence mode="popLayout">
               {isAddingLog && (
                 <motion.div
-                  initial={{ opacity: 0, y: 20 }}
+                  initial={{ opacity: 0, y: 30 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className="glass-panel p-8 rounded-[2rem] border-white/10 shadow-2xl bg-white/[0.02]"
+                  exit={{ opacity: 0, scale: 0.98 }}
+                  className="glass-panel p-10 rounded-[3rem] border-white/10 shadow-2xl bg-white/[0.03]"
                 >
                   <input
                     autoFocus
                     type="text"
-                    placeholder="Type achievement... (e.g. Coded Login Page)"
+                    placeholder="Describe your achievement..."
                     value={newLogContent}
                     onChange={(e) => setNewLogContent(e.target.value)}
                     onKeyDown={handleAddLog}
                     onBlur={() => !newLogContent && setIsAddingLog(false)}
-                    className="w-full bg-transparent text-2xl outline-none font-bold placeholder:text-zinc-800 tracking-tight"
+                    className="w-full bg-transparent text-3xl outline-none font-bold placeholder:text-zinc-800 tracking-tight"
                   />
-                  <div className="mt-6 flex items-center gap-3">
-                    <span className="flex h-2 w-2 relative">
+                  <div className="mt-8 flex items-center gap-4">
+                    <span className="flex h-3 w-3 relative">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
                     </span>
-                    <span className="text-[10px] text-zinc-600 font-black uppercase tracking-[0.2em]">Auto-Detect Categories</span>
+                    <span className="text-xs text-zinc-600 font-black uppercase tracking-[0.3em]">Processing intelligence...</span>
                   </div>
                 </motion.div>
               )}
 
               {tasks.length > 0 ? tasks.map(log => {
                 const info = getCategoryInfo(log.title);
+                const displayDuration = localDurations[log.id] || log.duration || 0;
+                
                 return (
                   <motion.div 
                     layout
-                    initial={{ opacity: 0, y: 20 }}
+                    initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
+                    exit={{ opacity: 0, scale: 0.98 }}
                     key={log.id} 
-                    className="glass-panel p-7 rounded-[2rem] group hover:bg-white/[0.04] transition-all flex justify-between items-center border-white/5 shadow-lg"
+                    className={`glass-panel p-10 rounded-[3rem] group transition-all flex justify-between items-center border-white/5 shadow-xl ${log.is_running ? 'border-blue-500/30 bg-blue-500/[0.03]' : 'hover:bg-white/[0.05]'}`}
                   >
-                    <div className="flex items-center gap-8">
-                      <div className={`w-14 h-14 rounded-2xl ${info.bg} ${info.color} flex items-center justify-center border ${info.border} shadow-inner`}>
-                        {info.icon}
+                    <div className="flex items-center gap-10">
+                      <div className={`w-20 h-20 rounded-3xl ${info.bg} ${info.color} flex items-center justify-center border ${info.border} shadow-inner`}>
+                        {React.cloneElement(info.icon, { size: 28 })}
                       </div>
                       <div>
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className={`text-[10px] font-black uppercase tracking-[0.2em] px-2 py-0.5 rounded ${info.bg} ${info.color}`}>
+                        <div className="flex items-center gap-4 mb-3">
+                          <span className={`text-xs font-black uppercase tracking-[0.3em] px-3 py-1 rounded-lg ${info.bg} ${info.color}`}>
                             {info.label}
                           </span>
+                          {displayDuration > 0 && (
+                            <span className="text-sm font-mono font-bold text-zinc-500 flex items-center gap-2">
+                              <Clock size={12} /> {formatDuration(displayDuration)}
+                            </span>
+                          )}
                         </div>
-                        <p className="text-2xl text-zinc-100 font-bold tracking-tight leading-tight">{log.title}</p>
+                        <p className="text-4xl text-zinc-100 font-black tracking-tighter leading-tight">{log.title}</p>
                       </div>
                     </div>
-                    <button onClick={() => deleteTask(log.id)} className="w-12 h-12 rounded-2xl flex items-center justify-center text-zinc-800 hover:text-red-400 hover:bg-red-400/10 opacity-0 group-hover:opacity-100 transition-all">
-                      <X size={24} />
-                    </button>
+                    
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => toggleTimer(log.id, !log.is_running)}
+                        className={`w-16 h-16 rounded-3xl flex items-center justify-center transition-all ${log.is_running ? 'bg-orange-500 text-white' : 'bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10'}`}
+                        title={log.is_running ? "Pause Timer" : "Start Timer"}
+                      >
+                        {log.is_running ? <Pause size={32} /> : <Play size={32} />}
+                      </button>
+                      <button onClick={() => deleteTask(log.id)} className="w-16 h-16 rounded-3xl flex items-center justify-center text-zinc-800 hover:text-red-400 hover:bg-red-400/10 opacity-0 group-hover:opacity-100 transition-all">
+                        <X size={32} />
+                      </button>
+                    </div>
                   </motion.div>
                 );
               }) : !isAddingLog && (
-                <div className="flex flex-col items-center justify-center py-40">
-                  <div className="w-24 h-24 rounded-[2rem] border-2 border-dashed border-zinc-800 flex items-center justify-center mb-8">
-                    <Folder size={32} className="text-zinc-800" />
+                <div className="flex flex-col items-center justify-center py-56">
+                  <div className="w-32 h-32 rounded-[3rem] border-4 border-dashed border-zinc-800 flex items-center justify-center mb-10">
+                    <Folder size={48} className="text-zinc-800" />
                   </div>
-                  <p className="text-xl font-black text-zinc-800 uppercase tracking-[0.3em]">Zero Drift</p>
-                  <p className="text-zinc-700 mt-2 font-medium">Nothing logged for this date yet</p>
-                  <button 
-                    onClick={() => setIsAddingLog(true)}
-                    className="mt-8 text-blue-500 font-black uppercase tracking-widest text-xs hover:text-blue-400 transition-colors"
-                  >
-                    + Log Activity
-                  </button>
+                  <p className="text-3xl font-black text-zinc-800 uppercase tracking-[0.4em]">Zero Drift</p>
+                  <p className="text-zinc-700 mt-4 text-lg font-medium italic">The canvas is empty. Record your first win.</p>
                 </div>
               )}
             </AnimatePresence>
@@ -226,23 +270,29 @@ function App() {
         </div>
 
         {/* Footer Stats */}
-        <div className="p-10 border-t border-white/5 bg-black/30 backdrop-blur-md">
-          <div className="max-w-2xl mx-auto flex justify-between items-center">
-            <div className="flex gap-16">
+        <div className="p-14 border-t border-white/5 bg-black/40 backdrop-blur-2xl">
+          <div className="flex justify-between items-center">
+            <div className="flex gap-24">
               <div>
-                <div className="text-3xl font-black tracking-tighter">{tasks.length}</div>
-                <div className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.2em]">Daily Achievements</div>
+                <div className="text-5xl font-black tracking-tighter">{tasks.length}</div>
+                <div className="text-xs font-black text-zinc-600 uppercase tracking-[0.3em]">Total Achievements</div>
               </div>
-              <div className="hidden sm:block">
-                <div className="text-3xl font-black tracking-tighter text-emerald-400">
+              <div>
+                <div className="text-5xl font-black tracking-tighter text-blue-400">
+                  {formatDuration(totalDailySeconds)}
+                </div>
+                <div className="text-xs font-black text-zinc-600 uppercase tracking-[0.3em]">Active Focus Time</div>
+              </div>
+              <div className="hidden lg:block">
+                <div className="text-5xl font-black tracking-tighter text-emerald-400">
                   {tasks.filter(t => getCategoryInfo(t.title).label === 'Development').length}
                 </div>
-                <div className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.2em]">Dev Commits</div>
+                <div className="text-xs font-black text-zinc-600 uppercase tracking-[0.3em]">Dev Projects</div>
               </div>
             </div>
-            <div className="text-[10px] font-black text-zinc-700 uppercase tracking-[0.3em] flex items-center gap-3">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-              Live Tracking Enabled
+            <div className="text-xs font-black text-zinc-700 uppercase tracking-[0.4em] flex items-center gap-4">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]"></span>
+              Neural Network Active
             </div>
           </div>
         </div>

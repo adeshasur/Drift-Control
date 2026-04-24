@@ -25,6 +25,9 @@ export function initDB() {
       workspace_id INTEGER,
       title TEXT NOT NULL,
       log_date TEXT DEFAULT (date('now')), -- YYYY-MM-DD
+      duration INTEGER DEFAULT 0, -- Total seconds spent
+      is_running INTEGER DEFAULT 0, -- 0 or 1
+      last_started_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
     );
@@ -92,6 +95,25 @@ export function setupIPC(ipcMain, shell) {
       db.prepare('UPDATE tasks SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, id);
     } else {
       db.prepare('UPDATE tasks SET status = ?, completed_at = NULL WHERE id = ?').run(status, id);
+    }
+    return true;
+  });
+
+  ipcMain.handle('toggle-timer', (_, { id, isRunning }) => {
+    const db = getDB();
+    if (isRunning) {
+      // Starting the timer
+      db.prepare('UPDATE tasks SET is_running = 1, last_started_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+    } else {
+      // Pausing the timer
+      const task = db.prepare('SELECT duration, last_started_at FROM tasks WHERE id = ?').get(id);
+      if (task && task.last_started_at) {
+        const startTime = new Date(task.last_started_at).getTime();
+        const now = new Date().getTime();
+        const elapsed = Math.floor((now - startTime) / 1000);
+        const newDuration = (task.duration || 0) + elapsed;
+        db.prepare('UPDATE tasks SET is_running = 0, duration = ?, last_started_at = NULL WHERE id = ?').run(newDuration, id);
+      }
     }
     return true;
   });
