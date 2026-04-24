@@ -1,25 +1,32 @@
 import React, { useEffect, useState } from 'react'
 import { useStore } from './store'
 import { Folder, Code, Plus, Search, CheckCircle, Clock, AlertCircle, Link as LinkIcon, Play, X } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 
 function WindowControls() {
   return (
-    <div className="absolute top-4 right-6 flex items-center gap-2 no-drag z-50">
+    <div className="absolute top-0 right-0 flex items-center no-drag z-[100] h-10">
       <div 
         onClick={() => window.api?.minimize()} 
-        className="w-3 h-3 rounded-full bg-zinc-600 hover:bg-yellow-500 cursor-pointer transition-all duration-200"
+        className="w-12 h-full flex items-center justify-center hover:bg-white/10 cursor-pointer transition-colors"
         title="Minimize"
-      />
+      >
+        <div className="w-3 h-[1px] bg-white" />
+      </div>
       <div 
         onClick={() => window.api?.maximize()} 
-        className="w-3 h-3 rounded-full bg-zinc-600 hover:bg-green-500 cursor-pointer transition-all duration-200"
+        className="w-12 h-full flex items-center justify-center hover:bg-white/10 cursor-pointer transition-colors"
         title="Maximize"
-      />
+      >
+        <div className="w-3 h-3 border border-white" />
+      </div>
       <div 
         onClick={() => window.api?.close()} 
-        className="w-3 h-3 rounded-full bg-zinc-600 hover:bg-red-500 cursor-pointer transition-all duration-200"
+        className="w-12 h-full flex items-center justify-center hover:bg-red-500 cursor-pointer transition-colors group"
         title="Close"
-      />
+      >
+        <X size={16} className="text-white opacity-70 group-hover:opacity-100" />
+      </div>
     </div>
   );
 }
@@ -51,98 +58,47 @@ function DeepWorkOverlay({ taskTitle }) {
   );
 }
 
+const getCategoryInfo = (text) => {
+  const content = text.toLowerCase();
+  
+  if (content.match(/ucsc|nibm|bit|exam|study|assignment|semester|degree|learn|reading|class/)) {
+    return { label: 'Education', icon: <Clock size={14} />, color: 'text-blue-400', bg: 'bg-blue-400/10', border: 'border-blue-400/20' };
+  }
+  if (content.match(/code|fix|bug|react|css|js|electron|repo|github|dev|implementation|build|git|push/)) {
+    return { label: 'Development', icon: <Code size={14} />, color: 'text-emerald-400', bg: 'bg-emerald-400/10', border: 'border-emerald-400/20' };
+  }
+  if (content.match(/figma|ui|ux|logo|color|layout|design|aesthetic|mockup/)) {
+    return { label: 'Design', icon: <Search size={14} />, color: 'text-purple-400', bg: 'bg-purple-400/10', border: 'border-purple-400/20' };
+  }
+  if (content.match(/gym|health|food|sleep|travel|personal|workout|meditate|run/)) {
+    return { label: 'Personal', icon: <Plus size={14} />, color: 'text-orange-400', bg: 'bg-orange-400/10', border: 'border-orange-400/20' };
+  }
+  
+  return { label: 'Activity', icon: <AlertCircle size={14} />, color: 'text-zinc-400', bg: 'bg-zinc-400/10', border: 'border-zinc-400/20' };
+};
+
 function App() {
-  console.log('Drift Control App is mounting...');
   const { 
-    workspaces, activeWorkspaceId, tasks, links, 
-    fetchWorkspaces, setActiveWorkspace, addWorkspace,
-    addTask, updateTaskStatus
+    tasks, selectedDate,
+    fetchWorkspaces, addTask, deleteTask, setSelectedDate
   } = useStore();
 
-  const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
+  const [isAddingLog, setIsAddingLog] = useState(false);
+  const [newLogContent, setNewLogContent] = useState('');
 
-  const calculateTimeLeft = (deadline) => {
-    if (!deadline) return null;
-    const difference = +new Date(deadline) - +new Date();
-    if (difference <= 0) return "D-DAY";
-    
-    const days = Math.floor(difference / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((difference / (1000 * 60 * 60)) % 24);
-    return `${days}d ${hours}h`;
-  };
-
-  const [timeLeft, setTimeLeft] = useState(activeWorkspace ? calculateTimeLeft(activeWorkspace.deadline_date) : null);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (activeWorkspace?.deadline_date) {
-        setTimeLeft(calculateTimeLeft(activeWorkspace.deadline_date));
-      }
-    }, 60000); // Update every minute
-    return () => clearInterval(timer);
-  }, [activeWorkspace]);
-
-  useEffect(() => {
-    if (activeWorkspace) {
-      setTimeLeft(calculateTimeLeft(activeWorkspace.deadline_date));
-    }
-  }, [activeWorkspaceId, workspaces]);
-
-  const [isAddingWorkspace, setIsAddingWorkspace] = useState(false);
-  const [newWorkspaceName, setNewWorkspaceName] = useState('');
-
-  const [isAddingTask, setIsAddingTask] = useState(false);
-  const [newTaskTitle, setNewTaskTitle] = useState('');
-  
   useEffect(() => {
     fetchWorkspaces();
-    
-    // Global shortcut listener from Electron
-    if (window.api && window.api.onShortcutAddTask) {
-      window.api.onShortcutAddTask(() => {
-        setIsAddingTask(true);
-      });
-    }
-
-    return () => {
-      if (window.api && window.api.removeShortcutAddTask) {
-        window.api.removeShortcutAddTask(() => {});
-      }
-    }
   }, []);
 
-  const handleAddWorkspace = async (e) => {
-    if (e.key === 'Enter' && newWorkspaceName.trim()) {
-      await addWorkspace({ name: newWorkspaceName.trim(), folder_path: '', github_url: '' });
-      setNewWorkspaceName('');
-      setIsAddingWorkspace(false);
+  const handleAddLog = async (e) => {
+    if (e.key === 'Enter' && newLogContent.trim()) {
+      await addTask(newLogContent.trim());
+      setNewLogContent('');
+      setIsAddingLog(false);
     }
   };
 
-  const handleAddTask = async (e) => {
-    if (e.key === 'Enter' && newTaskTitle.trim()) {
-      await addTask({ title: newTaskTitle.trim(), priority: 'Medium', status: 'Pending' });
-      setNewTaskTitle('');
-      setIsAddingTask(false);
-    }
-  };
-
-
-
-  const openPath = (path) => {
-    if (path) window.api.openPath(path);
-  }
-
-  const openUrl = (url) => {
-    if (url) window.api.openExternal(url);
-  }
-
-  const handleDeepWork = (task) => {
-    const title = task ? task.title : 'Focus Mode';
-    window.api.openDeepWork(title);
-  }
-
-  // Simple Hash Router for the separate Deep Work window
+  // Handle routing for deep work
   const [hash, setHash] = useState(window.location.hash);
   useEffect(() => {
     const onHashChange = () => setHash(window.location.hash);
@@ -157,206 +113,139 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen w-full font-sans draggable">
+    <div className="flex h-screen w-full font-sans draggable overflow-hidden bg-zinc-950 text-white">
       <WindowControls />
-      {/* Sidebar - Workspaces */}
-      <div className="w-64 glass-panel border-l-0 border-t-0 border-b-0 flex flex-col no-drag">
-        <div className="p-4 pt-10">
-          <h1 className="text-xl font-bold tracking-wider mb-6 flex items-center">
-            <span className="w-3 h-3 rounded-full bg-white mr-2"></span>
-            DRIFT CONTROL
-          </h1>
-          
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xs uppercase tracking-widest text-zinc-400 font-semibold">Workspaces</h2>
-            <button onClick={() => setIsAddingWorkspace(true)} className="text-zinc-400 hover:text-white transition-colors">
-              <Plus size={16} />
-            </button>
-          </div>
-
-          <div className="space-y-1">
-            {workspaces.map(ws => (
-              <div 
-                key={ws.id} 
-                onClick={() => setActiveWorkspace(ws.id)}
-                className={`px-3 py-2 rounded-md cursor-pointer transition-colors duration-200 ${
-                  activeWorkspaceId === ws.id 
-                    ? 'bg-white/10 text-white font-medium' 
-                    : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'
-                }`}
-              >
-                {ws.name}
-              </div>
-            ))}
+      
+      {/* Main Content Area - Centered Layout */}
+      <div className="flex-1 flex flex-col no-drag overflow-hidden max-w-4xl mx-auto border-x border-white/5 bg-zinc-900/30 shadow-2xl">
+        {/* Header */}
+        <div className="h-48 border-b border-glass-border flex flex-col justify-end px-16 pb-10 bg-gradient-to-b from-transparent to-black/20">
+          <div className="flex justify-between items-end">
+            <div>
+              <h1 className="text-xs font-black tracking-[0.3em] text-zinc-600 uppercase mb-3">System.Drift</h1>
+              <h2 className="text-5xl font-black tracking-tighter">Daily Log</h2>
+            </div>
             
-            {isAddingWorkspace && (
-              <input
-                autoFocus
-                type="text"
-                placeholder="New Workspace..."
-                value={newWorkspaceName}
-                onChange={(e) => setNewWorkspaceName(e.target.value)}
-                onKeyDown={handleAddWorkspace}
-                onBlur={() => setIsAddingWorkspace(false)}
-                className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-1.5 text-sm outline-none focus:border-zinc-500"
-              />
-            )}
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-3 bg-white/5 px-6 py-3 rounded-2xl border border-white/10 hover:border-white/20 transition-all cursor-pointer group shadow-inner">
+                <Clock size={18} className="text-blue-400 group-hover:scale-110 transition-transform" />
+                <input 
+                  type="date" 
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="bg-transparent border-none text-sm font-mono font-bold text-zinc-200 outline-none cursor-pointer"
+                />
+              </div>
+              <button 
+                onClick={() => setIsAddingLog(true)} 
+                className="w-14 h-14 bg-white text-black rounded-2xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-white/10"
+              >
+                <Plus size={28} strokeWidth={3} />
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col no-drag overflow-hidden">
-        {activeWorkspace ? (
-          <>
-            {/* Header / Smart Switch */}
-            <div className="h-20 border-b border-glass-border flex items-center justify-between px-8 bg-black/20">
-              <div>
-                <h2 className="text-2xl font-bold">{activeWorkspace.name}</h2>
-              </div>
-              <div className="flex gap-3">
-                <button 
-                  onClick={() => openPath(activeWorkspace.folder_path)}
-                  className="btn-secondary flex items-center gap-2"
-                  title={activeWorkspace.folder_path || "No folder linked"}
+        {/* Logs Area */}
+        <div className="flex-1 overflow-y-auto px-16 py-12 scrollbar-hide">
+          <div className="max-w-2xl mx-auto space-y-8">
+            <AnimatePresence mode="popLayout">
+              {isAddingLog && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="glass-panel p-8 rounded-[2rem] border-white/10 shadow-2xl bg-white/[0.02]"
                 >
-                  <Folder size={16} /> Folder
-                </button>
-                <button 
-                  onClick={() => openUrl(activeWorkspace.github_url)}
-                  className="btn-secondary flex items-center gap-2"
-                  title={activeWorkspace.github_url || "No github linked"}
-                >
-                  <Code size={16} /> Repo
-                </button>
-                <button onClick={() => handleDeepWork()} className="btn-primary flex items-center gap-2 ml-4 no-drag">
-                  <Play size={16} /> Deep Work
-                </button>
-              </div>
-            </div>
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="Type achievement... (e.g. Coded Login Page)"
+                    value={newLogContent}
+                    onChange={(e) => setNewLogContent(e.target.value)}
+                    onKeyDown={handleAddLog}
+                    onBlur={() => !newLogContent && setIsAddingLog(false)}
+                    className="w-full bg-transparent text-2xl outline-none font-bold placeholder:text-zinc-800 tracking-tight"
+                  />
+                  <div className="mt-6 flex items-center gap-3">
+                    <span className="flex h-2 w-2 relative">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                    </span>
+                    <span className="text-[10px] text-zinc-600 font-black uppercase tracking-[0.2em]">Auto-Detect Categories</span>
+                  </div>
+                </motion.div>
+              )}
 
-            <div className="flex-1 flex overflow-hidden">
-              {/* Task Board */}
-              <div className="flex-1 p-8 overflow-y-auto">
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-lg font-semibold flex items-center gap-2">
-                    <Clock size={18} /> Current Tasks
-                  </h3>
-                  <button 
-                    onClick={() => setIsAddingTask(true)}
-                    className="flex items-center gap-1 text-sm bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-full transition-colors no-drag"
+              {tasks.length > 0 ? tasks.map(log => {
+                const info = getCategoryInfo(log.title);
+                return (
+                  <motion.div 
+                    layout
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    key={log.id} 
+                    className="glass-panel p-7 rounded-[2rem] group hover:bg-white/[0.04] transition-all flex justify-between items-center border-white/5 shadow-lg"
                   >
-                    <Plus size={14} /> Add Task
-                    <span className="ml-2 text-xs text-zinc-500">Ctrl+Space</span>
+                    <div className="flex items-center gap-8">
+                      <div className={`w-14 h-14 rounded-2xl ${info.bg} ${info.color} flex items-center justify-center border ${info.border} shadow-inner`}>
+                        {info.icon}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-3 mb-2">
+                          <span className={`text-[10px] font-black uppercase tracking-[0.2em] px-2 py-0.5 rounded ${info.bg} ${info.color}`}>
+                            {info.label}
+                          </span>
+                        </div>
+                        <p className="text-2xl text-zinc-100 font-bold tracking-tight leading-tight">{log.title}</p>
+                      </div>
+                    </div>
+                    <button onClick={() => deleteTask(log.id)} className="w-12 h-12 rounded-2xl flex items-center justify-center text-zinc-800 hover:text-red-400 hover:bg-red-400/10 opacity-0 group-hover:opacity-100 transition-all">
+                      <X size={24} />
+                    </button>
+                  </motion.div>
+                );
+              }) : !isAddingLog && (
+                <div className="flex flex-col items-center justify-center py-40">
+                  <div className="w-24 h-24 rounded-[2rem] border-2 border-dashed border-zinc-800 flex items-center justify-center mb-8">
+                    <Folder size={32} className="text-zinc-800" />
+                  </div>
+                  <p className="text-xl font-black text-zinc-800 uppercase tracking-[0.3em]">Zero Drift</p>
+                  <p className="text-zinc-700 mt-2 font-medium">Nothing logged for this date yet</p>
+                  <button 
+                    onClick={() => setIsAddingLog(true)}
+                    className="mt-8 text-blue-500 font-black uppercase tracking-widest text-xs hover:text-blue-400 transition-colors"
+                  >
+                    + Log Activity
                   </button>
                 </div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
 
-                {isAddingTask && (
-                  <div className="mb-4 bg-zinc-900/50 p-4 rounded-lg border border-glass-border">
-                    <input
-                      autoFocus
-                      type="text"
-                      placeholder="What needs to be done? (Press Enter)"
-                      value={newTaskTitle}
-                      onChange={(e) => setNewTaskTitle(e.target.value)}
-                      onKeyDown={handleAddTask}
-                      onBlur={() => setIsAddingTask(false)}
-                      className="w-full bg-transparent text-lg outline-none placeholder:text-zinc-600"
-                    />
-                  </div>
-                )}
-
-                <div className="grid grid-cols-3 gap-6">
-                  {/* Pending */}
-                  <div className="space-y-3">
-                    <div className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-2 flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-zinc-500"></span> Pending
-                    </div>
-                    {tasks.filter(t => t.status === 'Pending').map(task => (
-                      <div key={task.id} className="glass-panel p-4 rounded-lg hover:border-zinc-600 transition-colors cursor-pointer" onClick={() => updateTaskStatus(task.id, 'In-Progress')}>
-                        <h4 className="font-medium text-sm">{task.title}</h4>
-                        <div className="mt-3 flex justify-between items-center">
-                          <span className="text-[10px] uppercase px-2 py-0.5 rounded-sm bg-white/10 text-zinc-300">
-                            {task.priority}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* In Progress */}
-                  <div className="space-y-3">
-                    <div className="text-xs font-semibold uppercase tracking-wider text-blue-400 mb-2 flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-blue-500"></span> In Progress
-                    </div>
-                    {tasks.filter(t => t.status === 'In-Progress').map(task => (
-                      <div key={task.id} className="glass-panel border-blue-500/30 p-4 rounded-lg cursor-pointer" onClick={() => updateTaskStatus(task.id, 'Done')}>
-                        <h4 className="font-medium text-sm">{task.title}</h4>
-                        <div className="mt-3 flex justify-between items-center">
-                          <span className="text-[10px] uppercase px-2 py-0.5 rounded-sm bg-blue-500/20 text-blue-300">
-                            {task.priority}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Done */}
-                  <div className="space-y-3">
-                    <div className="text-xs font-semibold uppercase tracking-wider text-green-400 mb-2 flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-green-500"></span> Done
-                    </div>
-                    {tasks.filter(t => t.status === 'Done').map(task => (
-                      <div key={task.id} className="glass-panel border-green-500/20 opacity-50 p-4 rounded-lg cursor-pointer" onClick={() => updateTaskStatus(task.id, 'Pending')}>
-                        <h4 className="font-medium text-sm line-through text-zinc-400">{task.title}</h4>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+        {/* Footer Stats */}
+        <div className="p-10 border-t border-white/5 bg-black/30 backdrop-blur-md">
+          <div className="max-w-2xl mx-auto flex justify-between items-center">
+            <div className="flex gap-16">
+              <div>
+                <div className="text-3xl font-black tracking-tighter">{tasks.length}</div>
+                <div className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.2em]">Daily Achievements</div>
               </div>
-
-              {/* Asset Vault Right Sidebar */}
-              <div className="w-64 border-l border-glass-border p-6 overflow-y-auto glass-panel border-t-0 border-r-0 border-b-0">
-                <h3 className="text-sm font-semibold flex items-center gap-2 mb-4 uppercase tracking-wider text-zinc-400">
-                  <LinkIcon size={14} /> Asset Vault
-                </h3>
-                
-                <div className="space-y-3 mb-6">
-                  {links.map(link => (
-                    <div key={link.id} onClick={() => openUrl(link.url)} className="flex items-center gap-3 p-3 glass-panel rounded-lg cursor-pointer hover:bg-white/10 transition-colors">
-                      <div className="bg-zinc-800 p-2 rounded text-zinc-300"><LinkIcon size={14} /></div>
-                      <span className="text-sm font-medium truncate">{link.title}</span>
-                    </div>
-                  ))}
-                  <button className="w-full py-2 border border-dashed border-zinc-600 rounded-lg text-sm text-zinc-400 hover:text-white hover:border-zinc-400 transition-colors">
-                    + Add Link
-                  </button>
+              <div className="hidden sm:block">
+                <div className="text-3xl font-black tracking-tighter text-emerald-400">
+                  {tasks.filter(t => getCategoryInfo(t.title).label === 'Development').length}
                 </div>
-
-                {/* Gamification / Contribution */}
-                <h3 className="text-sm font-semibold flex items-center gap-2 mb-4 uppercase tracking-wider text-zinc-400 mt-8">
-                  Activity & Deadline
-                </h3>
-                
-                {timeLeft && (
-                  <div className="glass-panel p-4 rounded-lg flex flex-col items-center justify-center space-y-2 border-red-500/20 mb-3">
-                    <div className="text-2xl font-bold text-red-400 tracking-tighter">{timeLeft}</div>
-                    <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Until Exam</div>
-                  </div>
-                )}
-
-                <div className="glass-panel p-4 rounded-lg flex flex-col items-center justify-center space-y-2">
-                  <div className="text-3xl font-bold text-green-400">{tasks.filter(t => t.status === 'Done').length}</div>
-                  <div className="text-xs text-zinc-400 uppercase tracking-wider">Tasks Done</div>
-                </div>
+                <div className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.2em]">Dev Commits</div>
               </div>
             </div>
-          </>
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-zinc-500">
-            Select or create a workspace to begin
+            <div className="text-[10px] font-black text-zinc-700 uppercase tracking-[0.3em] flex items-center gap-3">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              Live Tracking Enabled
+            </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
   )

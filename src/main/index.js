@@ -31,8 +31,8 @@ function createWindow() {
   ipcMain.on('window-close', () => mainWindow.close());
 
   mainWindow.on('ready-to-show', () => {
+    mainWindow.maximize()
     mainWindow.show()
-    mainWindow.webContents.openDevTools()
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -62,17 +62,15 @@ app.whenReady().then(() => {
   // Setup IPC handlers
   setupIPC(ipcMain, shell);
 
-  // Auto-seed initial workspaces if empty
+  // Auto-seed initial categories if empty
   const db = getDB();
   const workspacesCount = db.prepare('SELECT count(*) as count FROM workspaces').get().count;
   if (workspacesCount === 0) {
-    console.log('Seeding initial workspaces...');
-    const insert = db.prepare('INSERT INTO workspaces (name, deadline_date) VALUES (?, ?)');
-    insert.run('UCSC', '2026-07-11');
-    insert.run('NIBM', null);
-  } else {
-    // One-time update for UCSC deadline if needed
-    db.prepare("UPDATE workspaces SET deadline_date = '2026-07-11' WHERE name = 'UCSC' AND deadline_date IS NULL").run();
+    console.log('Seeding initial categories...');
+    const insert = db.prepare('INSERT INTO workspaces (name) VALUES (?)');
+    insert.run('Coding');
+    insert.run('Study');
+    insert.run('Personal');
   }
 
   // Deep Work Mode Window

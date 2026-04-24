@@ -24,8 +24,7 @@ export function initDB() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       workspace_id INTEGER,
       title TEXT NOT NULL,
-      priority TEXT DEFAULT 'Medium', -- Urgent, High, Medium, Low
-      status TEXT DEFAULT 'Pending', -- Pending, In-Progress, Done
+      log_date TEXT DEFAULT (date('now')), -- YYYY-MM-DD
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
     );
@@ -44,6 +43,13 @@ export function initDB() {
     db.prepare("SELECT deadline_date FROM workspaces LIMIT 1").get();
   } catch (e) {
     db.prepare("ALTER TABLE workspaces ADD COLUMN deadline_date TEXT").run();
+  }
+
+  // Migrate: add completed_at to tasks
+  try {
+    db.prepare("SELECT completed_at FROM tasks LIMIT 1").get();
+  } catch (e) {
+    db.prepare("ALTER TABLE tasks ADD COLUMN completed_at DATETIME").run();
   }
 
   return db;
@@ -65,22 +71,28 @@ export function setupIPC(ipcMain, shell) {
     return info.lastInsertRowid;
   });
 
-  ipcMain.handle('get-tasks', (_, workspaceId) => {
-    if (workspaceId) {
-      return getDB().prepare('SELECT * FROM tasks WHERE workspace_id = ?').all(workspaceId);
+  ipcMain.handle('get-tasks', (_, { workspaceId, date }) => {
+    if (workspaceId && date) {
+      return getDB().prepare('SELECT * FROM tasks WHERE workspace_id = ? AND log_date = ? ORDER BY created_at DESC').all(workspaceId, date);
+    } else if (date) {
+      return getDB().prepare('SELECT * FROM tasks WHERE log_date = ? ORDER BY created_at DESC').all(date);
     }
-    return getDB().prepare('SELECT * FROM tasks').all();
+    return [];
   });
   
-  ipcMain.handle('add-task', (_, task) => {
-    const stmt = getDB().prepare('INSERT INTO tasks (workspace_id, title, priority, status) VALUES (?, ?, ?, ?)');
-    const info = stmt.run(task.workspace_id, task.title, task.priority, task.status);
+  ipcMain.handle('add-task', (_, { workspace_id, title, log_date }) => {
+    const stmt = getDB().prepare('INSERT INTO tasks (workspace_id, title, log_date) VALUES (?, ?, ?)');
+    const info = stmt.run(workspace_id, title, log_date);
     return info.lastInsertRowid;
   });
 
   ipcMain.handle('update-task-status', (_, { id, status }) => {
-    const stmt = getDB().prepare('UPDATE tasks SET status = ? WHERE id = ?');
-    stmt.run(status, id);
+    const db = getDB();
+    if (status === 'Done') {
+      db.prepare('UPDATE tasks SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, id);
+    } else {
+      db.prepare('UPDATE tasks SET status = ?, completed_at = NULL WHERE id = ?').run(status, id);
+    }
     return true;
   });
 
@@ -88,10 +100,18 @@ export function setupIPC(ipcMain, shell) {
     return getDB().prepare('SELECT * FROM links WHERE workspace_id = ?').all(workspaceId);
   });
 
+  ipcMain.handle('delete-task', (_, id) => {
+    return getDB().prepare('DELETE FROM tasks WHERE id = ?').run(id);
+  });
+
   ipcMain.handle('add-link', (_, link) => {
     const stmt = getDB().prepare('INSERT INTO links (workspace_id, title, url) VALUES (?, ?, ?)');
     const info = stmt.run(link.workspace_id, link.title, link.url);
     return info.lastInsertRowid;
+  });
+
+  ipcMain.handle('delete-link', (_, id) => {
+    return getDB().prepare('DELETE FROM links WHERE id = ?').run(id);
   });
 
   ipcMain.handle('open-external', async (_, url) => {
