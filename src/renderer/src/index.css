@@ -2,8 +2,8 @@
 
 :root {
   --font-sans: 'Inter', -apple-system, system-ui, sans-serif;
-  --sidebar-bg: #0d0d0d;
-  --main-bg: #141414;
+  --sidebar-bg: #0c0c0c;
+  --main-bg: #111111;
   --accent: #3b82f6;
 }
 
@@ -17,7 +17,7 @@ body {
 
 .sidebar {
   background-color: var(--sidebar-bg);
-  width: 240px;
+  width: 280px; /* Wider sidebar for better presence */
   border-right: 1px solid #1f1f1f;
   display: flex;
   flex-direction: column;
@@ -26,13 +26,13 @@ body {
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  margin: 2px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  color: #a1a1aa;
+  gap: 14px;
+  padding: 12px 20px;
+  margin: 4px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #71717a;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -48,39 +48,41 @@ body {
 }
 
 .log-card {
-  background: #1a1a1a;
-  border: 1px solid #262626;
-  border-radius: 12px;
-  padding: 16px 20px;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 14px;
+  padding: 20px 24px;
   transition: all 0.2s;
 }
 
 .log-card:hover {
-  border-color: #404040;
-  background: #1f1f1f;
+  border-color: #3f3f46;
+  background: #1c1c1f;
 }
 
 .log-card.active {
-  border-color: rgba(59, 130, 246, 0.4);
-  background: rgba(59, 130, 246, 0.02);
-  box-shadow: 0 0 20px rgba(59, 130, 246, 0.05);
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.03);
+  box-shadow: 0 0 30px rgba(59, 130, 246, 0.08);
 }
 
 .input-container {
-  background: #1a1a1a;
-  border: 1px solid #262626;
-  border-radius: 12px;
-  padding: 0 16px;
-  height: 56px;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 16px;
+  padding: 0 20px;
+  height: 64px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+  gap: 16px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  width: 100%;
 }
 
 .input-container:focus-within {
   border-color: #3b82f6;
-  background: #1f1f1f;
+  background: #1c1c1f;
+  transform: translateY(-2px);
 }
 
 .draggable {
@@ -92,16 +94,16 @@ body {
 }
 
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #262626;
+  background: #27272a;
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #333;
+  background: #3f3f46;
 }
 
 @keyframes pulse-soft {
@@ -111,4 +113,9 @@ body {
 
 .animate-pulse-soft {
   animation: pulse-soft 2s infinite;
+}
+
+.glass {
+  background: rgba(17, 17, 17, 0.8);
+  backdrop-filter: blur(20px);
 }
