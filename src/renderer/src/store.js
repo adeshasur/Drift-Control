@@ -39,7 +39,6 @@ export const useStore = create((set, get) => ({
   },
   addTask: async (content) => {
     if (!window.api) return;
-    // Default to first category (General)
     const activeWorkspaceId = get().activeWorkspaceId || 1;
     const selectedDate = get().selectedDate;
     await window.api.addTask({ workspace_id: activeWorkspaceId, title: content, log_date: selectedDate });

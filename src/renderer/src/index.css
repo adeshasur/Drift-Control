@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+:root {
+  --font-sans: 'Segoe UI', 'Inter', system-ui, sans-serif;
+}
+
+body {
+  background-color: #1f1f1f;
+  color: #ffffff;
+  font-family: var(--font-sans);
+  overflow: hidden;
+}
+
+.sidebar {
+  background-color: #111111;
+  width: 280px;
+  border-right: 1px solid rgba(255,255,255,0.05);
+}
+
+.main-bg {
+  background-color: #1f1f1f;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  margin: 2px 8px;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #d1d1d1;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.sidebar-item:hover {
+  background-color: #252525;
+}
+
+.sidebar-item.active {
+  background-color: #252525;
+  color: #788cff;
+}
+
+.input-bar {
+  background-color: #252525;
+  border-radius: 4px;
+  padding: 0 16px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 24px 24px 24px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+.task-item {
+  background-color: #252525;
+  border-radius: 4px;
+  padding: 12px 16px;
+  margin: 0 24px 12px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  transition: background 0.1s;
+}
+
+.task-item:hover {
+  background-color: #2d2d2d;
+}
+
+.circle-check {
+  width: 20px;
+  height: 20px;
+  border: 1px solid #788cff;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.circle-check.running {
+  background-color: #788cff;
+  box-shadow: 0 0 8px rgba(120, 140, 255, 0.4);
+}
+
+.draggable {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #444;
+}
