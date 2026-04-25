@@ -1,393 +1,765 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react'
-import { useStore } from './store'
-import { 
-  Sun, Calendar, Hash, Check, 
-  Clock, Play, Pause, X, Plus, 
-  Zap, BarChart3, ChevronRight,
-  Settings, Activity, LayoutGrid,
-  CircleStop, Target, Flame, Trophy,
-  TrendingUp, Sparkles
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  AlarmClock,
+  ArrowDown,
+  ArrowUp,
+  Check,
+  CheckCircle2,
+  Clock3,
+  Flame,
+  Gauge,
+  GripVertical,
+  LayoutDashboard,
+  ListFilter,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
+  Search,
+  Sparkles,
+  Tag,
+  Trash2,
+  Trophy,
+  X
 } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
+import { useStore } from './store'
+
+const CATEGORIES = ['Work', 'Study', 'Personal', 'Health', 'General']
+const PRIORITIES = ['High', 'Medium', 'Low']
+
+function formatDuration(totalSeconds = 0) {
+  const safe = Math.max(0, Number(totalSeconds || 0))
+  const h = Math.floor(safe / 3600)
+  const m = Math.floor((safe % 3600) / 60)
+  const s = safe % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+function getLocalDateString() {
+  const now = new Date()
+  const tzOffsetMs = now.getTimezoneOffset() * 60 * 1000
+  return new Date(now.getTime() - tzOffsetMs).toISOString().slice(0, 10)
+}
+
+function formatMs(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+function formatDueLabel(dueDate) {
+  if (!dueDate) return 'No deadline'
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const due = new Date(dueDate)
+  const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate())
+  const diff = Math.round((dueDay.getTime() - today.getTime()) / 86400000)
+  if (diff === 0) return 'Due today'
+  if (diff === 1) return 'Due tomorrow'
+  if (diff < 0) return `Overdue ${Math.abs(diff)}d`
+  return due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
 
 function WindowControls() {
   return (
-    <div className="flex items-center no-drag h-10 pr-2">
-      <button onClick={() => window.api?.minimize()} className="w-10 h-10 flex items-center justify-center hover:bg-white/5 transition-colors group">
-        <div className="w-3 h-[1.5px] bg-zinc-700 group-hover:bg-zinc-300" />
+    <div className="window-controls no-drag">
+      <button onClick={() => window.api?.minimize()} aria-label="Minimize window">
+        <span className="window-line" />
       </button>
-      <button onClick={() => window.api?.maximize()} className="w-10 h-10 flex items-center justify-center hover:bg-white/5 transition-colors group">
-        <div className="w-3 h-3 border border-zinc-700 group-hover:bg-zinc-300 rounded-[1px]" />
+      <button onClick={() => window.api?.maximize()} aria-label="Maximize window">
+        <span className="window-square" />
       </button>
-      <button onClick={() => window.api?.close()} className="w-10 h-10 flex items-center justify-center hover:bg-red-500/90 transition-colors group">
-        <X size={14} className="text-zinc-700 group-hover:text-white" />
+      <button onClick={() => window.api?.close()} className="window-close" aria-label="Close window">
+        <X size={14} />
       </button>
-    </div>
-  );
-}
-
-const formatDuration = (totalSeconds) => {
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-};
-
-const getCategoryInfo = (text) => {
-  const content = text.toLowerCase();
-  if (content.includes('#study')) return { label: 'Study', color: 'text-blue-500', bg: 'bg-blue-500/10', border: 'border-blue-500/50', hex: '#3b82f6' };
-  if (content.includes('#dev') || content.includes('#code')) return { label: 'Dev', color: 'text-purple-500', bg: 'bg-purple-500/10', border: 'border-purple-500/50', hex: '#a855f7' };
-  if (content.includes('#design')) return { label: 'Design', color: 'text-pink-500', bg: 'bg-pink-500/10', border: 'border-pink-500/50', hex: '#ec4899' };
-  if (content.includes('#personal')) return { label: 'Personal', color: 'text-orange-500', bg: 'bg-orange-500/10', border: 'border-orange-500/50', hex: '#f97316' };
-
-  if (content.match(/ucsc|nibm|bit|exam|study|assignment|semester|degree|learn|reading|class|recording|lecture/)) {
-    return { label: 'Study', color: 'text-blue-500', bg: 'bg-blue-500/10', border: 'border-blue-500/50', hex: '#3b82f6' };
-  }
-  if (content.match(/code|fix|bug|react|css|js|electron|repo|github|dev|implementation|build|git|push/)) {
-    return { label: 'Dev', color: 'text-purple-500', bg: 'bg-purple-500/10', border: 'border-purple-500/50', hex: '#a855f7' };
-  }
-  return { label: 'Log', color: 'text-zinc-500', bg: 'bg-zinc-500/10', border: 'border-zinc-500/30', hex: '#71717a' };
-};
-
-function App() {
-  const { tasks, selectedDate, fetchWorkspaces, addTask, deleteTask, toggleTimer, setSelectedDate } = useStore();
-  const [newLogContent, setNewLogContent] = useState('');
-  const [localDurations, setLocalDurations] = useState({});
-  const [activeCategory, setActiveCategory] = useState(null);
-
-  useEffect(() => { fetchWorkspaces(); }, []);
-
-  // Sync active category border color
-  useEffect(() => {
-    const info = getCategoryInfo(newLogContent);
-    setActiveCategory(info.label !== 'Log' ? info : null);
-  }, [newLogContent]);
-
-  // Keyboard Shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.code === 'Space' && e.target.tagName !== 'INPUT') {
-        e.preventDefault();
-        const activeTask = tasks.find(t => t.is_running);
-        if (activeTask) toggleTimer(activeTask.id, false);
-        else if (tasks.length > 0) toggleTimer(tasks[0].id, true);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [tasks]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const updates = {};
-      tasks.forEach(task => {
-        if (task.is_running && task.last_started_at) {
-          const startTime = new Date(task.last_started_at).getTime();
-          const elapsed = Math.floor((new Date().getTime() - startTime) / 1000);
-          updates[task.id] = (task.duration || 0) + elapsed;
-        }
-      });
-      if (Object.keys(updates).length > 0) setLocalDurations(prev => ({ ...prev, ...updates }));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [tasks]);
-
-  const handleAddLog = async (e) => {
-    e.preventDefault();
-    if (newLogContent.trim()) {
-      await addTask(newLogContent.trim());
-      setNewLogContent('');
-    }
-  };
-
-  const totalDailySeconds = tasks.reduce((acc, t) => acc + (localDurations[t.id] || t.duration || 0), 0);
-  const runningTask = tasks.find(t => t.is_running);
-  const targetSeconds = 8 * 3600;
-  const progressPercent = Math.min((totalDailySeconds / targetSeconds) * 100, 100);
-
-  // Find most frequent category
-  const categories = tasks.map(t => getCategoryInfo(t.title).label);
-  const topCategory = categories.sort((a, b) => categories.filter(v => v === a).length - categories.filter(v => v === b).length).pop() || 'None';
-
-  return (
-    <div className="flex h-screen w-full bg-[#050505] text-[#ededed] overflow-hidden select-none font-sans">
-      {/* Sidebar */}
-      <aside className="sidebar no-drag">
-        <div className="p-10 draggable flex items-center gap-4">
-          <div className="w-12 h-12 rounded-[18px] bg-blue-600 flex items-center justify-center text-white shadow-2xl shadow-blue-600/40">
-            <Zap size={26} fill="currentColor" />
-          </div>
-          <div className="flex flex-col">
-            <span className="font-black text-2xl tracking-tighter text-white uppercase italic leading-none">Drift</span>
-            <span className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.4em] mt-1">Core Engine</span>
-          </div>
-        </div>
-
-        <nav className="flex-1 px-3 mt-6 space-y-1.5">
-          <div className="px-7 mb-4 text-[10px] font-black text-zinc-800 uppercase tracking-[0.4em]">Control Center</div>
-          <div className="nav-item active"><Sun size={18} /> Daily Log</div>
-          <div className="nav-item"><Calendar size={18} /> History</div>
-          <div className="nav-item"><BarChart3 size={18} /> Analytics</div>
-          
-          <div className="mt-12 px-7 mb-4 text-[10px] font-black text-zinc-800 uppercase tracking-[0.4em]">Clusters</div>
-          <div className="nav-item group flex justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_#3b82f6]" />
-              <span className="group-hover:translate-x-1 transition-transform">Study Ops</span>
-            </div>
-          </div>
-          <div className="nav-item group flex justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_8px_#a855f7]" />
-              <span className="group-hover:translate-x-1 transition-transform">Development</span>
-            </div>
-          </div>
-          <div className="nav-item group flex justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-2 h-2 rounded-full bg-pink-500 shadow-[0_0_8px_#ec4899]" />
-              <span className="group-hover:translate-x-1 transition-transform">Design Lab</span>
-            </div>
-          </div>
-        </nav>
-
-        {/* Sidebar Goal Widget */}
-        <div className="m-6 p-7 bg-white/[0.01] border border-white/5 rounded-[32px] space-y-5">
-          <div className="flex justify-between items-center">
-            <span className="text-[10px] font-black text-zinc-600 uppercase tracking-widest">Efficiency</span>
-            <TrendingUp size={14} className="text-emerald-500" />
-          </div>
-          <div className="text-3xl font-mono font-bold text-white tracking-tighter">
-            {formatDuration(totalDailySeconds)}
-          </div>
-          <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-            <motion.div 
-              initial={{ width: 0 }}
-              animate={{ width: `${progressPercent}%` }}
-              className="h-full bg-gradient-to-r from-blue-600 to-indigo-500"
-            />
-          </div>
-        </div>
-
-        <div className="p-8 border-t border-white/5 flex items-center justify-between">
-          <div className="w-10 h-10 rounded-xl bg-zinc-950 border border-white/5 flex items-center justify-center text-zinc-700 hover:text-zinc-300 transition-colors cursor-pointer">
-            <Settings size={20} />
-          </div>
-          <span className="text-[9px] font-black text-zinc-800 uppercase tracking-[0.2em]">Build 2.0.1</span>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col no-drag relative">
-        <header className="h-24 flex items-center justify-between px-12 draggable border-b border-white/5 glass z-50">
-          <div className="flex items-center gap-6 no-drag">
-             <div className="flex items-center gap-4">
-               <Sparkles size={20} className="text-blue-500" />
-               <h1 className="text-xl font-black text-white uppercase tracking-tight">Mainframe</h1>
-             </div>
-             <div className="h-6 w-px bg-zinc-900" />
-             <div className="flex items-center gap-2 px-3 py-1 bg-white/5 rounded-lg border border-white/5">
-                <Calendar size={14} className="text-zinc-600" />
-                <span className="text-zinc-400 text-xs font-black uppercase tracking-widest">{new Date(selectedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-             </div>
-          </div>
-          
-          <div className="flex items-center gap-12 no-drag">
-             {/* Quick Stats Top Right */}
-             <div className="hidden xl:flex items-center gap-8">
-               <div className="flex flex-col items-end">
-                 <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">Top Focus</span>
-                 <span className="text-xs font-bold text-blue-500 uppercase">{topCategory}</span>
-               </div>
-               <div className="flex flex-col items-end">
-                 <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">Streak</span>
-                 <span className="text-xs font-bold text-emerald-500 uppercase">12 DAYS</span>
-               </div>
-             </div>
-             <WindowControls />
-          </div>
-        </header>
-
-        <div className="flex-1 overflow-y-auto px-16 py-12 pb-56 relative">
-          <div className="max-w-5xl mx-auto relative">
-            
-            {/* CENTRAL FOCUS RING ENGINE */}
-            <div className="flex flex-col items-center justify-center py-20 mb-20 relative">
-              <div className={`relative w-64 h-64 flex items-center justify-center rounded-full transition-all duration-1000 ${runningTask ? 'active-glow border-blue-500/20' : 'border-zinc-900'}`}>
-                
-                {/* Orbiting Elements */}
-                {runningTask && (
-                  <>
-                    <div className="orbit-stats" style={{ animationDuration: '15s' }}>
-                      <div className="bg-blue-600/20 border border-blue-500/30 px-2 py-1 rounded-full text-[8px] font-black text-blue-500 uppercase tracking-widest">Target 08:00</div>
-                    </div>
-                    <div className="orbit-stats" style={{ animationDuration: '25s', animationDelay: '-5s' }}>
-                      <div className="bg-emerald-600/20 border border-emerald-500/30 px-2 py-1 rounded-full text-[8px] font-black text-emerald-500 uppercase tracking-widest">Active Focus</div>
-                    </div>
-                  </>
-                )}
-
-                <svg className="absolute inset-0 w-full h-full transform -rotate-90">
-                  <circle cx="128" cy="128" r="110" className="stroke-zinc-950" strokeWidth="12" fill="transparent" />
-                  <motion.circle 
-                    cx="128" cy="128" r="110" 
-                    className="stroke-blue-600 shadow-2xl" 
-                    strokeWidth="12" fill="transparent"
-                    strokeDasharray={691.15}
-                    initial={{ strokeDashoffset: 691.15 }}
-                    animate={{ strokeDashoffset: 691.15 - (691.15 * progressPercent / 100) }}
-                    strokeLinecap="round"
-                  />
-                </svg>
-
-                <div className="flex flex-col items-center justify-center z-10">
-                  <AnimatePresence mode="wait">
-                    {runningTask ? (
-                      <motion.div 
-                        key="timer" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-                        className="flex flex-col items-center"
-                      >
-                        <span className="text-4xl font-mono font-black text-white tracking-tighter tabular-nums leading-none">
-                          {formatDuration(localDurations[runningTask.id] || runningTask.duration)}
-                        </span>
-                        <div className="mt-6 flex items-center gap-4">
-                           <button onClick={() => toggleTimer(runningTask.id, false)} className="w-12 h-12 rounded-2xl bg-white text-black flex items-center justify-center hover:scale-110 transition-transform shadow-xl shadow-white/10 active:scale-95">
-                              <Pause size={24} fill="currentColor" />
-                           </button>
-                           <button onClick={() => toggleTimer(runningTask.id, false)} className="w-10 h-10 rounded-xl bg-zinc-900 border border-white/5 text-zinc-500 flex items-center justify-center hover:text-white transition-colors">
-                              <CircleStop size={20} />
-                           </button>
-                        </div>
-                      </motion.div>
-                    ) : (
-                      <motion.div key="percent" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center">
-                        <span className="text-5xl font-black text-white tracking-tighter leading-none">{Math.round(progressPercent)}%</span>
-                        <span className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.3em] mt-3">Completed</span>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              </div>
-              
-              {/* Timeline Connection Line */}
-              <div className="h-20 w-px bg-gradient-to-b from-blue-600/50 to-zinc-900" />
-            </div>
-
-            {/* VERTICAL TIMELINE STREAM */}
-            <div className="relative pl-12 space-y-8">
-              <div className="timeline-line" />
-              
-              <AnimatePresence mode="popLayout">
-                {tasks.map((log, index) => {
-                  const info = getCategoryInfo(log.title);
-                  const displayDuration = localDurations[log.id] || log.duration || 0;
-                  
-                  return (
-                    <motion.div 
-                      layout
-                      initial={{ opacity: 0, x: -20, scale: 0.95 }}
-                      animate={{ opacity: 1, x: 0, scale: 1 }}
-                      transition={{ type: 'spring', damping: 20, stiffness: 100 }}
-                      key={log.id} 
-                      className="relative group"
-                    >
-                      <div className="timeline-node group-hover:border-blue-500 group-hover:scale-125 transition-all" />
-                      
-                      <div className={`log-card flex justify-between items-center ${log.is_running ? 'border-blue-500/30 bg-blue-500/[0.02]' : ''}`}>
-                        <div className="flex items-center gap-8">
-                          <div className={`w-14 h-14 rounded-2xl ${info.bg} ${info.color} flex items-center justify-center border border-white/5 shadow-inner group-hover:rotate-6 transition-transform`}>
-                            {log.is_running ? <Play size={24} className="animate-pulse" fill="currentColor" /> : <Check size={24} />}
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-3 mb-2">
-                              <span className={`text-[9px] font-black uppercase tracking-[0.2em] px-2.5 py-1 rounded-md ${info.bg} ${info.color} border border-white/5`}>
-                                {info.label}
-                              </span>
-                              {displayDuration > 0 && (
-                                <span className="text-xs font-mono font-bold text-zinc-500 flex items-center gap-2">
-                                  <Clock size={14} className={info.color} /> {formatDuration(displayDuration)}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-xl text-zinc-100 font-bold tracking-tight leading-tight">{log.title}</p>
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center gap-4 no-drag">
-                          {!log.is_running && (
-                            <button 
-                              onClick={() => toggleTimer(log.id, true)}
-                              className={`w-14 h-14 rounded-2xl flex items-center justify-center ${info.color} hover:bg-white/5 transition-all active:scale-90`}
-                            >
-                              <Play size={26} fill="currentColor" />
-                            </button>
-                          )}
-                          <button onClick={() => deleteTask(log.id)} className="w-12 h-12 rounded-2xl flex items-center justify-center text-zinc-900 hover:text-red-500 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all">
-                            <X size={24} />
-                          </button>
-                        </div>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-
-              {tasks.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-20 text-center opacity-30">
-                  <LayoutGrid size={40} className="text-zinc-800 mb-6" />
-                  <h3 className="text-sm font-black text-zinc-700 uppercase tracking-[0.3em]">Timeline Static</h3>
-                  <p className="text-zinc-800 mt-2 text-xs font-bold uppercase">Initialize log to enable stream</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Floating Smart Input */}
-        <div className="absolute bottom-0 left-0 right-0 p-12 bg-gradient-to-t from-[#050505] via-[#050505] to-transparent z-50">
-          <div className="max-w-4xl mx-auto">
-            <form 
-              onSubmit={handleAddLog}
-              className={`input-container no-drag group ${activeCategory ? `border-${activeCategory.color.split('-')[1]}-500/50 shadow-[0_0_20px_rgba(var(--${activeCategory.color.split('-')[1]}-rgb),0.2)]` : ''}`}
-              style={activeCategory ? { borderColor: activeCategory.hex + '80', boxShadow: `0 20px 50px ${activeCategory.hex}20` } : {}}
-            >
-              <div className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all ${activeCategory ? 'bg-zinc-100 text-black' : 'bg-blue-600/10 text-blue-500'}`}>
-                <Plus size={26} strokeWidth={3} />
-              </div>
-              <div className="flex-1 relative">
-                <input 
-                  type="text" 
-                  placeholder="Capture achievement... e.g. #dev Initialized UI Stream" 
-                  value={newLogContent}
-                  onChange={(e) => setNewLogContent(e.target.value)}
-                  className="bg-transparent w-full text-xl font-bold outline-none placeholder:text-zinc-800 text-white" 
-                />
-                {/* Simulated Hashtag Suggestion */}
-                {newLogContent.endsWith('#') && (
-                  <div className="absolute bottom-full mb-4 left-0 bg-[#0f0f0f] border border-white/10 rounded-xl p-2 shadow-2xl flex gap-2">
-                    {['study', 'dev', 'design', 'personal'].map(tag => (
-                      <div key={tag} className="px-3 py-1 bg-white/5 rounded-lg text-[10px] font-black text-zinc-400 uppercase tracking-widest cursor-pointer hover:bg-blue-600 hover:text-white transition-all">#{tag}</div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="hidden lg:flex items-center gap-4 px-5 py-2.5 bg-white/5 rounded-2xl border border-white/5 text-[10px] font-black text-zinc-600 tracking-[0.2em] uppercase">
-                <Sparkles size={14} className={activeCategory ? activeCategory.color : 'text-blue-500'} /> DRIFT v2
-              </div>
-            </form>
-            
-            <div className="mt-5 flex justify-center gap-8">
-               <div className="text-[9px] font-black text-zinc-800 uppercase tracking-widest flex items-center gap-2">
-                 <kbd className="px-2 py-1 bg-zinc-950 border border-white/5 rounded-lg text-zinc-600 shadow-lg">SPACE</kbd> TOGGLE ENGINE
-               </div>
-               <div className="text-[9px] font-black text-zinc-800 uppercase tracking-widest flex items-center gap-2">
-                 <kbd className="px-2 py-1 bg-zinc-950 border border-white/5 rounded-lg text-zinc-600 shadow-lg">#</kbd> TAG CLUSTERS
-               </div>
-            </div>
-          </div>
-        </div>
-      </main>
     </div>
   )
 }
 
-export default App
+function notify(title, body) {
+  if (!('Notification' in window)) return
+  if (Notification.permission === 'granted') {
+    new Notification(title, { body })
+  } else if (Notification.permission !== 'denied') {
+    Notification.requestPermission().then((permission) => {
+      if (permission === 'granted') new Notification(title, { body })
+    })
+  }
+}
+
+export default function App() {
+  const {
+    tasks,
+    selectedDate,
+    fetchWorkspaces,
+    addTask,
+    updateTaskMeta,
+    reorderTasks,
+    deleteTask,
+    toggleTimer,
+    toggleCurrentTimer,
+    setTaskCompleted,
+    setAlwaysOnTop
+  } = useStore()
+
+  const inputRef = useRef(null)
+  const searchRef = useRef(null)
+
+  const [taskTitle, setTaskTitle] = useState('')
+  const [category, setCategory] = useState('Work')
+  const [priority, setPriority] = useState('Medium')
+  const [dueDate, setDueDate] = useState(getLocalDateString())
+  const [startNow, setStartNow] = useState(true)
+  const [focusMinutes, setFocusMinutes] = useState(25)
+  const [breakMinutes, setBreakMinutes] = useState(5)
+
+  const [search, setSearch] = useState('')
+  const [filterCategory, setFilterCategory] = useState('All')
+  const [filterPriority, setFilterPriority] = useState('All')
+  const [smartFilter, setSmartFilter] = useState('all')
+  const [viewMode, setViewMode] = useState('board')
+  const [editingTaskId, setEditingTaskId] = useState(null)
+  const [editingTitle, setEditingTitle] = useState('')
+
+  const [localDurations, setLocalDurations] = useState({})
+  const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false)
+  const [draggedId, setDraggedId] = useState(null)
+  const [formError, setFormError] = useState('')
+
+  const [pomodoro, setPomodoro] = useState({
+    mode: 'focus',
+    endAt: null,
+    sessionCount: 0,
+    runningTaskId: null
+  })
+  const [pomodoroTick, setPomodoroTick] = useState(() => Date.now())
+  const sectionVariants = {
+    hidden: { opacity: 0, y: 8 },
+    show: { opacity: 1, y: 0, transition: { staggerChildren: 0.06, delayChildren: 0.02 } }
+  }
+  const cardVariants = {
+    hidden: { opacity: 0, y: 10, scale: 0.99 },
+    show: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.26 } }
+  }
+
+  useEffect(() => {
+    fetchWorkspaces()
+  }, [fetchWorkspaces])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const updates = {}
+      tasks.forEach((task) => {
+        if (task.is_running && task.last_started_at) {
+          const elapsed = Math.floor((Date.now() - new Date(task.last_started_at).getTime()) / 1000)
+          updates[task.id] = (task.duration || 0) + Math.max(0, elapsed)
+        }
+      })
+      if (Object.keys(updates).length > 0) {
+        setLocalDurations((prev) => ({ ...prev, ...updates }))
+      }
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [tasks])
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem('drift-ui-prefs')
+    if (!saved) return
+    try {
+      const prefs = JSON.parse(saved)
+      if (prefs.category) setCategory(prefs.category)
+      if (prefs.priority) setPriority(prefs.priority)
+      if (typeof prefs.startNow === 'boolean') setStartNow(prefs.startNow)
+      if (typeof prefs.focusMinutes === 'number') setFocusMinutes(prefs.focusMinutes)
+      if (typeof prefs.breakMinutes === 'number') setBreakMinutes(prefs.breakMinutes)
+      if (prefs.filterCategory) setFilterCategory(prefs.filterCategory)
+      if (prefs.filterPriority) setFilterPriority(prefs.filterPriority)
+      if (prefs.smartFilter) setSmartFilter(prefs.smartFilter)
+      if (prefs.viewMode) setViewMode(prefs.viewMode)
+    } catch (error) {
+      console.warn('Failed to load UI prefs', error)
+    }
+  }, [])
+
+  useEffect(() => {
+    const prefs = {
+      category,
+      priority,
+      startNow,
+      focusMinutes,
+      breakMinutes,
+      filterCategory,
+      filterPriority,
+      smartFilter,
+      viewMode
+    }
+    window.localStorage.setItem('drift-ui-prefs', JSON.stringify(prefs))
+  }, [category, priority, startNow, focusMinutes, breakMinutes, filterCategory, filterPriority, smartFilter, viewMode])
+
+  useEffect(() => {
+    const interval = setInterval(() => setPomodoroTick(Date.now()), 1000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const displayedTasks = useMemo(
+    () =>
+      tasks.map((task) => ({
+        ...task,
+        liveDuration: localDurations[task.id] ?? task.duration ?? 0
+      })),
+    [tasks, localDurations]
+  )
+
+  const runningTask = displayedTasks.find((task) => task.is_running && !task.completed_at)
+
+  useEffect(() => {
+    if (!runningTask) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPomodoro((prev) => ({ ...prev, runningTaskId: null, endAt: null }))
+      return
+    }
+
+    if (pomodoro.runningTaskId !== runningTask.id || !pomodoro.endAt) {
+      const ms = (runningTask.pomodoro_focus || 25) * 60 * 1000
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPomodoro((prev) => ({
+        ...prev,
+        mode: 'focus',
+        runningTaskId: runningTask.id,
+        endAt: Date.now() + ms
+      }))
+    }
+  }, [runningTask, pomodoro.runningTaskId, pomodoro.endAt])
+
+  useEffect(() => {
+    if (!pomodoro.endAt || !runningTask) return
+    if (pomodoroTick < pomodoro.endAt) return
+
+    if (pomodoro.mode === 'focus') {
+      const nextSessions = pomodoro.sessionCount + 1
+      const longBreak = nextSessions % 4 === 0
+      const restMinutes = longBreak ? Math.max((runningTask.pomodoro_break || 5) * 3, 10) : runningTask.pomodoro_break || 5
+      notify('Focus complete', `${runningTask.title} finished. ${longBreak ? 'Long' : 'Short'} break started.`)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPomodoro((prev) => ({
+        ...prev,
+        mode: longBreak ? 'long-break' : 'break',
+        endAt: Date.now() + restMinutes * 60 * 1000,
+        sessionCount: nextSessions
+      }))
+      return
+    }
+
+    notify('Break complete', 'Ready for the next focus sprint.')
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPomodoro((prev) => ({
+      ...prev,
+      mode: 'focus',
+      endAt: Date.now() + (runningTask.pomodoro_focus || 25) * 60 * 1000
+    }))
+  }, [pomodoroTick, pomodoro, runningTask])
+
+  const onKeyDown = React.useCallback((e) => {
+    if (e.ctrlKey && e.key.toLowerCase() === 'n') {
+      e.preventDefault()
+      inputRef.current?.focus()
+    }
+    if (e.ctrlKey && e.key.toLowerCase() === 'f') {
+      e.preventDefault()
+      searchRef.current?.focus()
+    }
+    if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'SELECT') {
+      e.preventDefault()
+      toggleCurrentTimer()
+    }
+  }, [toggleCurrentTimer])
+
+  useEffect(() => {
+    const onAdd = () => inputRef.current?.focus()
+    const onToggle = () => toggleCurrentTimer()
+
+    window.api?.onShortcutAddTask?.(onAdd)
+    window.api?.onShortcutToggleTimer?.(onToggle)
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.api?.removeShortcutAddTask?.(onAdd)
+      window.api?.removeShortcutToggleTimer?.(onToggle)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [toggleCurrentTimer, onKeyDown])
+
+  const visibleTodoTasks = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return displayedTasks
+      .filter((task) => !task.completed_at)
+      .filter((task) => (filterCategory === 'All' ? true : task.category === filterCategory))
+      .filter((task) => (filterPriority === 'All' ? true : task.priority === filterPriority))
+      .filter((task) => {
+        if (smartFilter === 'overdue') return !!task.due_date && new Date(task.due_date).getTime() < new Date().setHours(0, 0, 0, 0)
+        if (smartFilter === 'running') return task.is_running
+        if (smartFilter === 'high') return task.priority === 'High'
+        return true
+      })
+      .filter((task) => (q ? `${task.title} ${task.category} ${task.priority}`.toLowerCase().includes(q) : true))
+  }, [displayedTasks, search, filterCategory, filterPriority, smartFilter])
+
+  const completedTasks = displayedTasks.filter((task) => !!task.completed_at)
+  const todaySeconds = displayedTasks.reduce((sum, task) => sum + task.liveDuration, 0)
+  const todayTargetSeconds = 8 * 3600
+  const todayProgress = Math.min(100, Math.round((todaySeconds / todayTargetSeconds) * 100))
+
+  const analytics = useMemo(() => {
+    const categoryMap = {}
+    let overdue = 0
+    let done = 0
+
+    displayedTasks.forEach((task) => {
+      if (task.completed_at) done += 1
+      const key = task.category || 'General'
+      categoryMap[key] = (categoryMap[key] || 0) + task.liveDuration
+      if (!task.completed_at && task.due_date && new Date(task.due_date).getTime() < new Date().setHours(0, 0, 0, 0)) overdue += 1
+    })
+
+    const rows = Object.entries(categoryMap)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+
+    return {
+      done,
+      overdue,
+      focusScore: Math.round(Math.min(100, done * 18 + todaySeconds / 1800)),
+      rows
+    }
+  }, [displayedTasks, todaySeconds])
+
+  const pomodoroRemainingMs = pomodoro.endAt ? Math.max(0, pomodoro.endAt - pomodoroTick) : 0
+  const pomodoroTotalMs = useMemo(() => {
+    if (!runningTask) return 0
+    if (pomodoro.mode === 'focus') return (runningTask.pomodoro_focus || 25) * 60 * 1000
+    if (pomodoro.mode === 'long-break') return Math.max((runningTask.pomodoro_break || 5) * 3, 10) * 60 * 1000
+    return (runningTask.pomodoro_break || 5) * 60 * 1000
+  }, [runningTask, pomodoro.mode])
+
+  const pomodoroProgress = pomodoroTotalMs > 0 ? Math.min(100, Math.round(((pomodoroTotalMs - pomodoroRemainingMs) / pomodoroTotalMs) * 100)) : 0
+
+  async function handleAddTask(e) {
+    e.preventDefault()
+    const trimmed = taskTitle.trim()
+    if (!trimmed) {
+      return
+    }
+
+    try {
+      setFormError('')
+      await addTask({
+        content: trimmed,
+        category,
+        priority,
+        dueDate: dueDate || null,
+        startNow,
+        pomodoroFocus: focusMinutes,
+        pomodoroBreak: breakMinutes
+      })
+
+      setTaskTitle('')
+      setDueDate(getLocalDateString())
+      if (startNow) notify('Timer started', trimmed)
+    } catch (error) {
+      const message = error?.message || 'Unable to add task.'
+      setFormError(message)
+      notify('Add Task failed', message)
+      console.error('Add task failed:', error)
+    }
+  }
+
+  async function handleDrop(targetId) {
+    if (!draggedId || draggedId === targetId) return
+
+    const currentIds = visibleTodoTasks.map((task) => task.id)
+    const from = currentIds.indexOf(draggedId)
+    const to = currentIds.indexOf(targetId)
+    if (from === -1 || to === -1) return
+
+    const next = [...currentIds]
+    next.splice(to, 0, next.splice(from, 1)[0])
+
+    await reorderTasks(next)
+    setDraggedId(null)
+  }
+
+  async function saveTaskTitle(taskId) {
+    const trimmed = editingTitle.trim()
+    if (!trimmed) return
+    await updateTaskMeta({ id: taskId, title: trimmed })
+    setEditingTaskId(null)
+    setEditingTitle('')
+  }
+
+  async function handleDeleteTask(task) {
+    if (task.is_running) {
+      const ok = window.confirm('This task timer is running. Delete anyway?')
+      if (!ok) return
+    }
+    await deleteTask(task.id)
+  }
+
+  async function clearCompletedTasks() {
+    if (completedTasks.length === 0) return
+    const ok = window.confirm(`Delete all ${completedTasks.length} completed tasks?`)
+    if (!ok) return
+    for (const task of completedTasks) {
+      // eslint-disable-next-line no-await-in-loop
+      await deleteTask(task.id)
+    }
+  }
+
+  async function togglePin() {
+    const next = !isAlwaysOnTop
+    setIsAlwaysOnTop(next)
+    await setAlwaysOnTop(next)
+  }
+
+  return (
+    <div className="app-shell">
+      <header className="app-header draggable">
+        <div className="header-left no-drag">
+          <div className={`brand-dot ${runningTask ? 'running' : ''}`} />
+          <div>
+            <p className="brand-title">Drift Pro Command Deck</p>
+            <p className="brand-subtitle">{new Date(selectedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+          </div>
+        </div>
+
+        <div className="header-right no-drag">
+          <div className="stat-pill">
+            <Clock3 size={14} />
+            <span>Today {formatDuration(todaySeconds)}</span>
+          </div>
+          <button className={`pin-btn ${isAlwaysOnTop ? 'active' : ''}`} onClick={togglePin}>
+            <ArrowUp size={13} /> {isAlwaysOnTop ? 'Pinned' : 'Pin Mini'}
+          </button>
+          <WindowControls />
+        </div>
+      </header>
+
+      <main className="board-wrap">
+        <motion.section className="left-rail" variants={sectionVariants} initial="hidden" animate="show">
+          <motion.article className="add-card" variants={cardVariants}>
+            <form onSubmit={handleAddTask} className="add-form">
+              <label className="field-label" htmlFor="task-input">New Task</label>
+              <div className="task-input-row">
+                <Plus size={18} />
+                <input
+                  ref={inputRef}
+                  id="task-input"
+                  type="text"
+                  value={taskTitle}
+                  onChange={(e) => setTaskTitle(e.target.value)}
+                  placeholder="Write short note, build feature, revise chapter..."
+                />
+              </div>
+
+              <div className="triple-grid">
+                <label>
+                  <span className="field-label">Category</span>
+                  <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                    {CATEGORIES.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  <span className="field-label">Priority</span>
+                  <select value={priority} onChange={(e) => setPriority(e.target.value)}>
+                    {PRIORITIES.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  <span className="field-label">Due Date</span>
+                  <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                </label>
+              </div>
+
+              <div className="timer-grid">
+                <label>
+                  <span className="field-label">Focus (min)</span>
+                  <input type="number" min="5" max="120" value={focusMinutes} onChange={(e) => setFocusMinutes(Number(e.target.value || 25))} />
+                </label>
+                <label>
+                  <span className="field-label">Break (min)</span>
+                  <input type="number" min="1" max="30" value={breakMinutes} onChange={(e) => setBreakMinutes(Number(e.target.value || 5))} />
+                </label>
+              </div>
+
+              <label className="toggle-wrap">
+                <input type="checkbox" checked={startNow} onChange={(e) => setStartNow(e.target.checked)} />
+                <span>Start timer immediately after add</span>
+              </label>
+
+              <motion.button 
+                type="submit"
+                className="primary-btn"
+                whileHover={{ scale: 1.01, y: -1 }}
+                whileTap={{ scale: 0.985 }}
+                onClick={(e) => {
+                  if (!taskTitle.trim()) {
+                    e.preventDefault()
+                    inputRef.current?.focus()
+                  }
+                }}
+              >
+                Add Task
+              </motion.button>
+              {formError && <p className="form-error">{formError}</p>}
+            </form>
+          </motion.article>
+
+          <motion.article layout className="pomodoro-card" variants={cardVariants}>
+            <div className="pomodoro-head">
+              <h3>Pomodoro Pro</h3>
+              <span>{pomodoro.mode}</span>
+            </div>
+            <div className="pomodoro-ring-wrap">
+              <div className="pomodoro-ring">
+                <div className="pomodoro-ring-fill" style={{ '--p': `${pomodoroProgress}%` }} />
+                <div className="pomodoro-ring-core">{formatMs(pomodoroRemainingMs)}</div>
+              </div>
+            </div>
+            <p className="pomodoro-sub">
+              {runningTask ? runningTask.title : 'Start a task timer to activate cycles'}
+            </p>
+            <div className="pomodoro-meta">
+              <span><Flame size={13} /> Sessions {pomodoro.sessionCount}</span>
+              <button className="ghost-btn" onClick={() => toggleCurrentTimer()}>
+                {runningTask ? <Pause size={14} /> : <Play size={14} />} {runningTask ? 'Pause' : 'Resume'}
+              </button>
+            </div>
+          </motion.article>
+
+          <motion.article layout className="analytics-card" variants={cardVariants}>
+            <h3>Analytics</h3>
+            <div className="analytics-grid">
+              <div>
+                <p className="metric-label">Focus Score</p>
+                <p className="metric-value"><Gauge size={15} /> {analytics.focusScore}</p>
+              </div>
+              <div>
+                <p className="metric-label">Completed</p>
+                <p className="metric-value">{analytics.done}</p>
+              </div>
+              <div>
+                <p className="metric-label">Overdue</p>
+                <p className="metric-value warning">{analytics.overdue}</p>
+              </div>
+              <div>
+                <p className="metric-label">Streak</p>
+                <p className="metric-value"><Trophy size={15} /> {Math.min(analytics.done, 12)}d</p>
+              </div>
+            </div>
+
+            <div className="bar-list">
+              {analytics.rows.length === 0 && <p className="empty-state">No tracked data yet.</p>}
+              {analytics.rows.map(([key, value]) => (
+                <div key={key} className="bar-row">
+                  <span>{key}</span>
+                  <div>
+                    <i style={{ width: `${Math.min(100, Math.round((value / Math.max(todaySeconds, 1)) * 100))}%` }} />
+                  </div>
+                  <strong>{formatDuration(value)}</strong>
+                </div>
+              ))}
+            </div>
+          </motion.article>
+        </motion.section>
+
+        <motion.section className="list-zone" variants={sectionVariants} initial="hidden" animate="show">
+          <motion.div className="hero-panel" variants={cardVariants}>
+            <div className="hero-title-row">
+              <h2><Sparkles size={15} /> Daily Momentum</h2>
+              <div className="view-toggle">
+                <button className={viewMode === 'board' ? 'active' : ''} onClick={() => setViewMode('board')}><LayoutDashboard size={13} /> Board</button>
+                <button className={viewMode === 'focus' ? 'active' : ''} onClick={() => setViewMode('focus')}><ListFilter size={13} /> Focus</button>
+              </div>
+            </div>
+            <div className="hero-progress-line"><i style={{ width: `${todayProgress}%` }} /></div>
+            <div className="hero-meta">
+              <span>{todayProgress}% of 8h target</span>
+              <span>{runningTask ? `Running: ${runningTask.title}` : 'No timer running'}</span>
+            </div>
+          </motion.div>
+
+          <div className="filter-row">
+            <div className="search-wrap">
+              <Search size={14} />
+              <input
+                ref={searchRef}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search tasks, categories, priorities"
+              />
+            </div>
+
+            <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
+              <option value="All">All Categories</option>
+              {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+
+            <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)}>
+              <option value="All">All Priorities</option>
+              {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+
+          <div className="quick-filters">
+            <motion.button whileTap={{ scale: 0.96 }} className={smartFilter === 'all' ? 'active' : ''} onClick={() => setSmartFilter('all')}>All</motion.button>
+            <motion.button whileTap={{ scale: 0.96 }} className={smartFilter === 'running' ? 'active' : ''} onClick={() => setSmartFilter('running')}>Running</motion.button>
+            <motion.button whileTap={{ scale: 0.96 }} className={smartFilter === 'overdue' ? 'active' : ''} onClick={() => setSmartFilter('overdue')}>Overdue</motion.button>
+            <motion.button whileTap={{ scale: 0.96 }} className={smartFilter === 'high' ? 'active' : ''} onClick={() => setSmartFilter('high')}>High Priority</motion.button>
+          </div>
+
+          <div className={`list-columns ${viewMode === 'focus' ? 'focus-mode' : ''}`}>
+            <article className="list-card">
+              <div className="list-head"><h2>To Do</h2><span>{visibleTodoTasks.length}</span></div>
+              <div className="task-list">
+                <AnimatePresence>
+                  {visibleTodoTasks.length === 0 && <p className="empty-state">No tasks match current filters.</p>}
+                  {visibleTodoTasks.map((task) => {
+                    const overdue = task.due_date && !task.completed_at && new Date(task.due_date).getTime() < new Date().setHours(0, 0, 0, 0)
+                    return (
+                      <motion.div
+                        key={task.id}
+                        layout
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        whileHover={{ y: -2 }}
+                        className={`task-item ${task.is_running ? 'running' : ''} ${overdue ? 'overdue' : ''}`}
+                        draggable
+                        onDragStart={() => setDraggedId(task.id)}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={() => handleDrop(task.id)}
+                      >
+                        <div className="task-top">
+                          {editingTaskId === task.id ? (
+                            <input
+                              className="task-edit-input"
+                              value={editingTitle}
+                              onChange={(e) => setEditingTitle(e.target.value)}
+                              onBlur={() => saveTaskTitle(task.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveTaskTitle(task.id)
+                                if (e.key === 'Escape') {
+                                  setEditingTaskId(null)
+                                  setEditingTitle('')
+                                }
+                              }}
+                              autoFocus
+                            />
+                          ) : (
+                            <p className="task-title">{task.title}</p>
+                          )}
+                          <div className="task-badges">
+                            <span className={`priority-chip ${task.priority?.toLowerCase()}`}>{task.priority || 'Medium'}</span>
+                            <span className="category-chip"><Tag size={11} /> {task.category || 'General'}</span>
+                          </div>
+                        </div>
+
+                        <div className="task-meta-row compact">
+                          <div className="mini-field">
+                            <span>Due</span>
+                            <input
+                              type="date"
+                              value={task.due_date || ''}
+                              onChange={(e) => updateTaskMeta({ id: task.id, due_date: e.target.value || null })}
+                            />
+                          </div>
+                          <div className="mini-field">
+                            <span>Priority</span>
+                            <select value={task.priority || 'Medium'} onChange={(e) => updateTaskMeta({ id: task.id, priority: e.target.value })}>
+                              {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+                            </select>
+                          </div>
+                          <div className="task-time-stack">
+                            <span className="time-text">{formatDuration(task.liveDuration)}</span>
+                            <span className={`due-chip ${overdue ? 'overdue' : ''}`}>{formatDueLabel(task.due_date)}</span>
+                          </div>
+                        </div>
+
+                        <div className="task-actions">
+                          <motion.button whileTap={{ scale: 0.95 }} className="icon-btn" title="Drag hint"><GripVertical size={15} /></motion.button>
+                          <motion.button
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => {
+                              setEditingTaskId(task.id)
+                              setEditingTitle(task.title || '')
+                            }}
+                            className="icon-btn"
+                            title="Edit title"
+                          >
+                            {editingTaskId === task.id ? <Check size={15} /> : <Pencil size={15} />}
+                          </motion.button>
+                          <motion.button whileTap={{ scale: 0.95 }} onClick={() => toggleTimer(task.id, !task.is_running)} className="icon-btn" title={task.is_running ? 'Pause' : 'Start'}>
+                            {task.is_running ? <Pause size={16} /> : <Play size={16} />}
+                          </motion.button>
+                          <motion.button whileTap={{ scale: 0.95 }} onClick={() => setTaskCompleted(task.id, true)} className="icon-btn success" title="Complete"><CheckCircle2 size={16} /></motion.button>
+                          <motion.button whileTap={{ scale: 0.95 }} onClick={() => handleDeleteTask(task)} className="icon-btn danger" title="Delete"><Trash2 size={16} /></motion.button>
+                        </div>
+                      </motion.div>
+                    )
+                  })}
+                </AnimatePresence>
+              </div>
+            </article>
+
+            {viewMode === 'board' && (
+              <article className="list-card">
+                <div className="list-head">
+                  <h2>Completed</h2>
+                  <div className="completed-head-tools">
+                    <span>{completedTasks.length}</span>
+                    <button className="mini-clear-btn" onClick={clearCompletedTasks}>Clear</button>
+                  </div>
+                </div>
+                <div className="task-list">
+                  {completedTasks.length === 0 && <p className="empty-state">Completed items appear here.</p>}
+                  {completedTasks.map((task) => (
+                    <div key={task.id} className="task-item done">
+                      <div className="task-top">
+                        <p className="task-title">{task.title}</p>
+                        <CheckCircle2 size={16} className="done-icon" />
+                      </div>
+                      <div className="task-bottom">
+                        <span className="time-text">{formatDuration(task.liveDuration)}</span>
+                        <span className="done-at">{new Date(task.completed_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                      <div className="task-actions">
+                        <button onClick={() => setTaskCompleted(task.id, false)} className="icon-btn">Undo</button>
+                        <button onClick={() => handleDeleteTask(task)} className="icon-btn danger">Delete</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            )}
+          </div>
+
+          <div className="shortcut-strip">
+            <span><AlarmClock size={13} /> Shortcuts:</span>
+            <span><kbd>Ctrl+N</kbd> Add</span>
+            <span><kbd>Ctrl+F</kbd> Search</span>
+            <span><kbd>Space</kbd> Start/Pause</span>
+            <span><kbd>Ctrl+Shift+P</kbd> Tray Timer</span>
+            <button className="ghost-btn" onClick={() => toggleCurrentTimer()}><ArrowDown size={13} /> Quick Toggle</button>
+          </div>
+        </motion.section>
+      </main>
+    </div>
+  )
+}

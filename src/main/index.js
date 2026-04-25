@@ -1,129 +1,136 @@
-import { app, shell, BrowserWindow, ipcMain, globalShortcut } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import icon from '../../resources/icon.png?asset'
+import iconPath from '../../resources/icon.png?asset'
+const icon = nativeImage.createFromPath(iconPath)
 import { initDB, setupIPC, getDB } from './database'
 
+let mainWindow = null
+let tray = null
+
+function buildTrayMenu() {
+  return Menu.buildFromTemplate([
+    {
+      label: 'Start/Pause Timer',
+      click: () => {
+        mainWindow?.webContents.send('shortcut-toggle-timer')
+      }
+    },
+    {
+      label: 'Show App',
+      click: () => {
+        if (!mainWindow) return
+        if (!mainWindow.isVisible()) mainWindow.show()
+        mainWindow.focus()
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => app.quit()
+    }
+  ])
+}
+
 function createWindow() {
-  const mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+  const window = new BrowserWindow({
+    width: 1280,
+    height: 860,
     show: false,
     autoHideMenuBar: true,
     frame: false,
     titleBarStyle: 'hidden',
-    ...(process.platform === 'linux' ? { icon } : {}),
+    icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
     }
   })
 
-  // Window Controls IPC
-  ipcMain.on('window-minimize', () => mainWindow.minimize());
+  ipcMain.on('window-minimize', () => window.minimize())
   ipcMain.on('window-maximize', () => {
-    if (mainWindow.isMaximized()) {
-      mainWindow.unmaximize();
-    } else {
-      mainWindow.maximize();
-    }
-  });
-  ipcMain.on('window-close', () => mainWindow.close());
+    if (window.isMaximized()) window.unmaximize()
+    else window.maximize()
+  })
+  ipcMain.on('window-close', () => window.close())
+  ipcMain.on('renderer-log', (_, ...args) => console.log('RENDERER:', ...args))
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.maximize()
-    mainWindow.show()
+  ipcMain.handle('set-always-on-top', (_, enabled) => {
+    window.setAlwaysOnTop(!!enabled, 'floating')
+    return true
   })
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  mainWindow = window
+
+  window.on('ready-to-show', () => {
+    window.maximize()
+    window.show()
+  })
+
+  window.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
 
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  if (is.dev && process.env.ELECTRON_RENDERER_URL) {
+    window.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    window.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
-  return mainWindow;
+  return window
+}
+
+function setupTray() {
+  tray = new Tray(icon)
+  tray.setToolTip('Drift Control')
+  tray.setContextMenu(buildTrayMenu())
+  tray.on('click', () => {
+    if (!mainWindow) return
+    if (!mainWindow.isVisible()) mainWindow.show()
+    else mainWindow.focus()
+  })
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('com.kdj.driftcontrol')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // Initialize SQLite Database
-  initDB();
+  initDB()
+  setupIPC(ipcMain, shell)
 
-  // Setup IPC handlers
-  setupIPC(ipcMain, shell);
-
-  // Auto-seed initial categories if empty
-  const db = getDB();
-  const workspacesCount = db.prepare('SELECT count(*) as count FROM workspaces').get().count;
+  const db = getDB()
+  const workspacesCount = db.prepare('SELECT count(*) as count FROM workspaces').get().count
   if (workspacesCount === 0) {
-    console.log('Seeding initial categories...');
-    const insert = db.prepare('INSERT INTO workspaces (name) VALUES (?)');
-    insert.run('Coding');
-    insert.run('Study');
-    insert.run('Personal');
+    const insert = db.prepare('INSERT INTO workspaces (name) VALUES (?)')
+    insert.run('Coding')
+    insert.run('Study')
+    insert.run('Personal')
   }
 
-  // Deep Work Mode Window
-  let deepWorkWindow = null;
-  ipcMain.on('open-deep-work', (_, taskTitle) => {
-    if (deepWorkWindow) {
-      deepWorkWindow.focus();
-      return;
-    }
-    deepWorkWindow = new BrowserWindow({
-      width: 300,
-      height: 150,
-      alwaysOnTop: true,
-      frame: false,
-      transparent: true,
-      resizable: false,
-      webPreferences: {
-        preload: join(__dirname, '../preload/index.js'),
-        sandbox: false
-      }
-    });
+  createWindow()
+  setupTray()
 
-    if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-      deepWorkWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}#/deep-work?task=${encodeURIComponent(taskTitle)}`)
-    } else {
-      deepWorkWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: `deep-work?task=${encodeURIComponent(taskTitle)}` })
-    }
-
-    deepWorkWindow.on('closed', () => {
-      deepWorkWindow = null;
-    });
-  });
-
-  const mainWindow = createWindow()
-
-  // Global Shortcut: Ctrl+Space to Add Task
   globalShortcut.register('CommandOrControl+Space', () => {
-    mainWindow.webContents.send('shortcut-add-task');
-    if (!mainWindow.isVisible()) {
-      mainWindow.show();
-    }
-    mainWindow.focus();
-  });
+    mainWindow?.webContents.send('shortcut-add-task')
+    if (mainWindow && !mainWindow.isVisible()) mainWindow.show()
+    mainWindow?.focus()
+  })
 
-  app.on('activate', function () {
+  globalShortcut.register('CommandOrControl+Shift+P', () => {
+    mainWindow?.webContents.send('shortcut-toggle-timer')
+  })
+
+  app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
+  if (process.platform !== 'darwin') app.quit()
 })
 
 app.on('will-quit', () => {

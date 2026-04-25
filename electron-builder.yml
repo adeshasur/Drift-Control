@@ -1,5 +1,6 @@
-appId: com.electron.app
-productName: drift-control
+appId: com.kdj.driftcontrol
+productName: Drift Control
+copyright: Copyright © 2026 Adheesha Sooriyaarachchi
 directories:
   buildResources: build
 files:
@@ -11,6 +12,10 @@ files:
 asarUnpack:
   - resources/**
 win:
+  icon: build/icon.ico
+  signAndEditExecutable: false
+  target:
+    - nsis
   executableName: drift-control
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
@@ -39,4 +44,4 @@ appImage:
 npmRebuild: false
 publish:
   provider: generic
-  url: https://example.com/auto-updates
+  url: https://github.com/adeshasur/Drift-Control
